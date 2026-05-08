@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -28,16 +29,27 @@ export default function CoachesDirectory() {
   const [coaches, setCoaches] = useState<CoachListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [location, setLocation] = useState("");
+  const [specialty, setSpecialty] = useState("");
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const list = await listCoaches({
+        q: q.trim() || undefined,
+        location: location.trim() || undefined,
+        specialty: specialty.trim() || undefined,
+      });
+      setCoaches(list);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const list = await listCoaches();
-        setCoaches(list);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onPick = async (c: CoachListItem) => {
@@ -89,6 +101,51 @@ export default function CoachesDirectory() {
             ? "Send your clip to a coach and get personalised feedback."
             : "Browse our certified surf coaches. Tap one to view their profile."}
         </Text>
+      </View>
+
+      <View style={styles.filterBox}>
+        <View style={styles.searchRow}>
+          <Ionicons name="search" size={16} color={colors.textMuted} />
+          <TextInput
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search name, bio…"
+            placeholderTextColor={colors.textMuted}
+            style={styles.searchInput}
+            returnKeyType="search"
+            onSubmitEditing={fetchData}
+            testID="coaches-search-input"
+          />
+        </View>
+        <View style={styles.filterRow}>
+          <TextInput
+            value={specialty}
+            onChangeText={setSpecialty}
+            placeholder="Specialty"
+            placeholderTextColor={colors.textMuted}
+            style={[styles.filterInput, { marginRight: spacing.sm }]}
+            returnKeyType="search"
+            onSubmitEditing={fetchData}
+            testID="coaches-specialty-filter"
+          />
+          <TextInput
+            value={location}
+            onChangeText={setLocation}
+            placeholder="Location"
+            placeholderTextColor={colors.textMuted}
+            style={styles.filterInput}
+            returnKeyType="search"
+            onSubmitEditing={fetchData}
+            testID="coaches-location-filter"
+          />
+        </View>
+        <TouchableOpacity
+          style={styles.applyBtn}
+          onPress={fetchData}
+          testID="coaches-apply-filters-btn"
+        >
+          <Text style={styles.applyText}>Apply filters</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -236,5 +293,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: "center",
     paddingHorizontal: spacing.lg,
+  },
+  filterBox: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.textPrimary,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  filterRow: { flexDirection: "row", marginBottom: spacing.sm },
+  filterInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  applyBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  applyText: {
+    color: "#000",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
   },
 });

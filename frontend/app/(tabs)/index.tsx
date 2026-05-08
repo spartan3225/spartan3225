@@ -35,6 +35,13 @@ export default function DashboardScreen() {
       }
       setUser(me);
       setItems(list);
+      // Best-effort push registration on first load (no-op on web)
+      try {
+        const { registerForPushNotificationsAsync } = await import(
+          "../../src/push"
+        );
+        registerForPushNotificationsAsync();
+      } catch {}
     } catch (e) {
       console.warn("load failed", e);
     } finally {

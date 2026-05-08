@@ -215,8 +215,17 @@ export type CoachListItem = {
   coach_location?: string | null;
 };
 
-export async function listCoaches(): Promise<CoachListItem[]> {
-  const res = await fetch(`${API_URL}/coaches`);
+export async function listCoaches(filters?: {
+  q?: string;
+  location?: string;
+  specialty?: string;
+}): Promise<CoachListItem[]> {
+  const qs = new URLSearchParams();
+  if (filters?.q) qs.append("q", filters.q);
+  if (filters?.location) qs.append("location", filters.location);
+  if (filters?.specialty) qs.append("specialty", filters.specialty);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(`${API_URL}/coaches${suffix}`);
   return res.json();
 }
 
@@ -236,7 +245,27 @@ export async function coachInbox(): Promise<AnalysisListItem[]> {
   return apiFetch<AnalysisListItem[]>("/coach/inbox");
 }
 
-// ---- Sharing & Comments ----
+// ---- Push notifications + plan management ----
+export async function savePushToken(token: string | null) {
+  return apiFetch<User>("/users/push-token", {
+    method: "PUT",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function cancelRenewal() {
+  return apiFetch<{
+    cancel_at_period_end: boolean;
+    subscription_expires_at?: string | null;
+  }>("/payments/cancel-renewal", { method: "POST" });
+}
+
+export async function resumeRenewal() {
+  return apiFetch<{
+    cancel_at_period_end: boolean;
+    subscription_expires_at?: string | null;
+  }>("/payments/resume-renewal", { method: "POST" });
+}
 export async function shareWithCoach(analysisId: string, coachUserId: string) {
   return apiFetch(`/analyses/${analysisId}/share`, {
     method: "POST",

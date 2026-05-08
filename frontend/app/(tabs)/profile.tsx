@@ -211,6 +211,27 @@ export default function ProfileScreen() {
             </View>
           )}
 
+          {/* Manage Plan link (visible when user has any subscription state) */}
+          {isCoach && (
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => router.push("/manage-plan" as any)}
+              testID="manage-plan-link"
+            >
+              <Ionicons
+                name="card-outline"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.linkText}>Manage Subscription</Text>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.textMuted}
+              />
+            </TouchableOpacity>
+          )}
+
           {/* Browse coaches (everyone) */}
           <TouchableOpacity
             style={styles.linkRow}

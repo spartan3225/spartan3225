@@ -67,13 +67,15 @@ class User(BaseModel):
     name: str
     picture: Optional[str] = None
     created_at: datetime
-    tier: str = "free"  # free | coach
-    subscription_status: Optional[str] = None  # active | expired | none
+    tier: str = "free"
+    subscription_status: Optional[str] = None
     subscription_expires_at: Optional[datetime] = None
+    cancel_at_period_end: bool = False
     coach_bio: Optional[str] = None
     coach_specialty: Optional[str] = None
     coach_location: Optional[str] = None
     coach_public: bool = False
+    expo_push_token: Optional[str] = None
 
 
 class SessionExchangeRequest(BaseModel):
@@ -161,6 +163,15 @@ class ShareRequest(BaseModel):
 
 class CommentCreate(BaseModel):
     text: str
+
+
+class PushTokenUpdate(BaseModel):
+    token: Optional[str] = None
+
+
+class CancelRenewalResponse(BaseModel):
+    cancel_at_period_end: bool
+    subscription_expires_at: Optional[datetime] = None
 
 
 class Comment(BaseModel):
@@ -640,6 +651,24 @@ async def add_comment(
         "created_at": datetime.now(timezone.utc),
     }
     await db.analysis_comments.insert_one(dict(comment))
+
+    # Send push notification to the OTHER party (clip owner if commenter is coach, vice versa)
+    other_user_id = (
+        doc["user_id"] if user.user_id != doc["user_id"] else doc.get("shared_with_coach_id")
+    )
+    if other_user_id:
+        other = await db.users.find_one({"user_id": other_user_id}, {"_id": 0})
+        token = (other or {}).get("expo_push_token")
+        if token:
+            who = "Coach " + user.name if user.tier == "coach" else user.name
+            preview = body.text.strip()[:80]
+            await _send_push_notification(
+                token,
+                f"New comment from {who}",
+                preview,
+                {"analysis_id": analysis_id, "type": "comment"},
+            )
+
     return Comment(**comment)
 
 
@@ -707,9 +736,25 @@ async def update_coach_profile(
 
 
 @api_router.get("/coaches", response_model=List[CoachListItem])
-async def list_public_coaches():
+async def list_public_coaches(
+    q: Optional[str] = None,
+    location: Optional[str] = None,
+    specialty: Optional[str] = None,
+):
+    query: dict = {"tier": "coach", "coach_public": True}
+    if location:
+        query["coach_location"] = {"$regex": location, "$options": "i"}
+    if specialty:
+        query["coach_specialty"] = {"$regex": specialty, "$options": "i"}
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"coach_bio": {"$regex": q, "$options": "i"}},
+            {"coach_specialty": {"$regex": q, "$options": "i"}},
+            {"coach_location": {"$regex": q, "$options": "i"}},
+        ]
     cursor = db.users.find(
-        {"tier": "coach", "coach_public": True},
+        query,
         {
             "_id": 0,
             "user_id": 1,
@@ -948,6 +993,69 @@ async def stripe_webhook(request: Request):
     if evt.session_id:
         await _apply_subscription_if_paid(evt.session_id)
     return {"ok": True}
+
+
+async def _send_push_notification(to_token: str, title: str, body: str, data: dict | None = None):
+    """Best-effort push via Expo push service."""
+    if not to_token:
+        return
+    payload = {
+        "to": to_token,
+        "title": title,
+        "body": body,
+        "sound": "default",
+        "priority": "high",
+        "data": data or {},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client_http:
+            await client_http.post(
+                "https://exp.host/--/api/v2/push/send",
+                json=payload,
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+            )
+    except Exception as e:
+        logger.warning(f"Push send failed: {e}")
+
+
+@api_router.put("/users/push-token", response_model=User)
+async def update_push_token(
+    body: PushTokenUpdate, user: User = Depends(get_current_user)
+):
+    token_value = (body.token or "").strip() or None
+    await db.users.update_one(
+        {"user_id": user.user_id}, {"$set": {"expo_push_token": token_value}}
+    )
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    return _user_to_model(doc)
+
+
+@api_router.post("/payments/cancel-renewal", response_model=CancelRenewalResponse)
+async def cancel_renewal(user: User = Depends(get_current_user)):
+    if user.tier != "coach":
+        raise HTTPException(status_code=400, detail="No active Coach subscription")
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"cancel_at_period_end": True, "subscription_status": "canceled"}},
+    )
+    return CancelRenewalResponse(
+        cancel_at_period_end=True,
+        subscription_expires_at=user.subscription_expires_at,
+    )
+
+
+@api_router.post("/payments/resume-renewal", response_model=CancelRenewalResponse)
+async def resume_renewal(user: User = Depends(get_current_user)):
+    if user.tier != "coach":
+        raise HTTPException(status_code=400, detail="No active Coach subscription")
+    await db.users.update_one(
+        {"user_id": user.user_id},
+        {"$set": {"cancel_at_period_end": False, "subscription_status": "active"}},
+    )
+    return CancelRenewalResponse(
+        cancel_at_period_end=False,
+        subscription_expires_at=user.subscription_expires_at,
+    )
 
 
 # ---------------- Misc ----------------
