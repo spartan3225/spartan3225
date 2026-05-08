@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 export const API_URL = `${BACKEND_URL}/api`;
@@ -135,9 +136,32 @@ export async function logout(): Promise<void> {
 export async function uploadVideo(uri: string, name: string, mimeType: string) {
   const token = await getToken();
   const form = new FormData();
-  // RN: file as { uri, name, type }
-  // @ts-ignore
-  form.append("file", { uri, name, type: mimeType });
+
+  if (Platform.OS === "web") {
+    // On web, FormData needs a real File/Blob. Fetch the picked URI and convert.
+    try {
+      const blobRes = await fetch(uri);
+      const blob = await blobRes.blob();
+      const finalType = blob.type || mimeType || "video/mp4";
+      // Use File when available so browsers send filename properly
+      const fileObj =
+        typeof File !== "undefined"
+          ? new File([blob], name, { type: finalType })
+          : blob;
+      form.append("file", fileObj as any, name);
+    } catch (e) {
+      throw new Error(
+        `Could not read selected video on web. Please try again or use the mobile app. (${
+          (e as Error).message
+        })`
+      );
+    }
+  } else {
+    // RN native: file as { uri, name, type }
+    // @ts-ignore - React Native FormData accepts this shape natively
+    form.append("file", { uri, name, type: mimeType });
+  }
+
   const res = await fetch(`${API_URL}/analyses`, {
     method: "POST",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
