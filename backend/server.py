@@ -424,6 +424,35 @@ async def get_quota(user: User = Depends(get_current_user)):
     }
 
 
+def _coerce_str_list(items) -> List[str]:
+    """Gemini sometimes returns dicts inside string-only lists; flatten them."""
+    if not isinstance(items, list):
+        return []
+    out: List[str] = []
+    for it in items:
+        if isinstance(it, str):
+            s = it.strip()
+            if s:
+                out.append(s)
+        elif isinstance(it, dict):
+            title = str(it.get("title") or it.get("name") or "").strip()
+            detail = str(
+                it.get("detail")
+                or it.get("description")
+                or it.get("text")
+                or ""
+            ).strip()
+            if title and detail:
+                out.append(f"{title} — {detail}")
+            elif title:
+                out.append(title)
+            elif detail:
+                out.append(detail)
+        else:
+            out.append(str(it))
+    return out
+
+
 @api_router.post("/analyses", response_model=AnalysisOut)
 async def create_analysis(
     file: UploadFile = File(...),
@@ -494,11 +523,11 @@ async def create_analysis(
         "score": int(result.get("score") or 0),
         "overall_rating": result.get("overall_rating") or "Intermediate",
         "summary": result.get("summary") or "",
-        "strengths": result.get("strengths") or [],
+        "strengths": _coerce_str_list(result.get("strengths")),
         "mistakes": result.get("mistakes") or [],
-        "corrections": result.get("corrections") or [],
-        "tips": result.get("tips") or [],
-        "drills": result.get("drills") or [],
+        "corrections": _coerce_str_list(result.get("corrections")),
+        "tips": _coerce_str_list(result.get("tips")),
+        "drills": _coerce_str_list(result.get("drills")),
     }
     await db.analyses.update_one({"analysis_id": analysis_id}, {"$set": update})
 
@@ -818,19 +847,25 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
     stripe_checkout = StripeCheckout(
         api_key=STRIPE_API_KEY, webhook_url=f"{host_dummy}/api/webhook/stripe"
     )
-    status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(
-        session_id
-    )
+    try:
+        status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(
+            session_id
+        )
+        update = {
+            "status": status.status,
+            "payment_status": status.payment_status,
+            "amount_total": status.amount_total,
+            "currency": status.currency,
+            "last_checked_at": datetime.now(timezone.utc),
+        }
+        is_paid = status.payment_status == "paid"
+    except Exception as e:
+        # emergentintegrations may fail to validate Stripe metadata; degrade gracefully
+        logger.warning(f"get_checkout_status failed for {session_id}: {e}")
+        update = {"last_checked_at": datetime.now(timezone.utc)}
+        is_paid = txn.get("payment_status") == "paid"
 
-    update = {
-        "status": status.status,
-        "payment_status": status.payment_status,
-        "amount_total": status.amount_total,
-        "currency": status.currency,
-        "last_checked_at": datetime.now(timezone.utc),
-    }
-
-    if status.payment_status == "paid" and not txn.get("applied"):
+    if is_paid and not txn.get("applied"):
         plan_id = txn.get("plan_id")
         if plan_id in PLANS and txn.get("user_id"):
             interval = PLANS[plan_id]["interval_days"]

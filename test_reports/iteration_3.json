@@ -1,0 +1,43 @@
+{
+  "summary": "Re-tested SurfAI v1.1 backend after fixes for the two HIGH priority bugs from iteration_2. All 23 regression tests in test_membership_coach_stripe.py PASS, plus 4 targeted bugfix smoke tests PASS. Total 27/27 backend tests green. Both bugs are fully resolved.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/payments/status/{session_id}",
+        "issue": "The underlying emergentintegrations CheckoutStatusResponse pydantic model still rejects Stripe's StripeObject metadata (warning: 'Input should be a valid dictionary [type=dict_type, input_value=<StripeObject ...>]'). The endpoint correctly degrades (returns 200 with stored DB state), but tier activation will never fire from /payments/status polling — only the webhook path can flip a user to coach. Recommend logging this once + tracking a longer-term lib fix (or pre-coercing dict(session.metadata) inside a wrapper)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_membership_coach_stripe.py",
+    "/app/backend/tests/test_bugfix_smoke.py",
+    "/app/test_reports/pytest/membership_results.xml",
+    "/app/test_reports/pytest/bugfix_smoke_results.xml"
+  ],
+  "action_items": [
+    "Bug #1 (coach analyses 500) — RESOLVED. _coerce_str_list correctly flattens dict items. Verified across 2 deeper-prompt coach uploads; drills/strengths/tips/corrections are List[str].",
+    "Bug #2 (payments/status 500) — RESOLVED. try/except in _apply_subscription_if_paid keeps the request 200 and logs a warning. 3 successive polls return {status:'open', payment_status:'initiated', plan_id:'coach', tier:null}.",
+    "Optional follow-up: address the underlying emergentintegrations StripeObject->dict metadata validation bug so post-payment auto-upgrade via /payments/status polling works (currently webhooks are the only path). Consider monkey-patching CheckoutStatusResponse or pre-coercing metadata to a plain dict before model construction."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 983 lines — still recommended to split into routers/ (auth, analyses, coach, payments) for maintainability.",
+    "_apply_subscription_if_paid currently swallows the get_checkout_status exception with a generic warning; consider narrowing to ValidationError/CheckoutError so genuine network failures aren't silently masked.",
+    "When the polling path is the only surface (no webhook delivered), users who pay will not auto-upgrade until the upstream library bug is fixed or worked around."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bugfix_smoke.py (new — 4 targeted re-test cases for the two bugs)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not_tested_per_request"},
+  "seed_data_creation": "Re-seeded both demo users + sessions via mongosh snippet from test_credentials.md; cleared analyses, comments, and payment_transactions for user_demo_12345 and user_coach_67890 before each phase.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "v1.1 backend is stable. Pytest covers 23 membership/coach/Stripe scenarios + 4 targeted regression cases. To re-run: re-seed via /app/memory/test_credentials.md mongosh snippet (also delete db.analyses for both demo users to reset the free quota), then `pytest backend/tests/ -v`. The known emergentintegrations StripeObject metadata issue is now non-blocking but still real — surfaces as a logged warning during /payments/status polling.",
+  "rca_of_issue": "Bug #1 fix verified: /api/analyses with deeper coach prompt occasionally returns dict drills/tips. _coerce_str_list (server.py:427) flattens {title,detail} dicts into 'title — detail' before persisting; AnalysisOut serializes List[str] cleanly. Bug #2 fix verified: _apply_subscription_if_paid (server.py:835) wraps stripe_checkout.get_checkout_status() in try/except, on failure only updates last_checked_at and returns existing DB state. payment_status endpoint therefore returns 200 with whatever payment_status was last persisted ('initiated' immediately after checkout). The unknown-session path still 404s as expected because we look up the txn before calling Stripe."
+}
