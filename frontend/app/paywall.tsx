@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -12,21 +12,44 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
-import { createCheckout, getPlans, Plan } from "../src/api";
+import { createCheckout, getPlans, fetchMe, Plan, User } from "../src/api";
 import { colors, spacing } from "../src/theme";
+
+// Tier ordering for display.
+const TIER_ORDER = [
+  "free",
+  "beginner",
+  "plus",
+  "intermediate",
+  "advanced",
+  "pro",
+  "coach",
+];
+
+const HIGHLIGHTED_TIERS = new Set(["plus", "coach"]);
+
+type PaidPlanId =
+  | "beginner"
+  | "plus"
+  | "intermediate"
+  | "advanced"
+  | "pro"
+  | "coach";
 
 export default function PaywallScreen() {
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [me, setMe] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
       try {
-        const r = await getPlans();
-        setPlans(r.plans);
+        const [plansRes, user] = await Promise.all([getPlans(), fetchMe()]);
+        setPlans(plansRes.plans);
+        setMe(user);
       } catch (e: any) {
         setError(e?.message || "Failed to load plans");
       } finally {
@@ -35,9 +58,14 @@ export default function PaywallScreen() {
     })();
   }, []);
 
-  const upgrade = async (planId: "plus" | "coach") => {
+  const sortedPlans = useMemo(() => {
+    const byId = new Map(plans.map((p) => [p.plan_id, p]));
+    return TIER_ORDER.map((id) => byId.get(id)).filter(Boolean) as Plan[];
+  }, [plans]);
+
+  const upgrade = async (planId: PaidPlanId) => {
     setError(null);
-    setSubmitting(true);
+    setSubmitting(planId);
     try {
       let originUrl = "";
       if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -64,13 +92,10 @@ export default function PaywallScreen() {
       }
     } catch (e: any) {
       setError(e?.message || "Could not start checkout");
-      setSubmitting(false);
+    } finally {
+      setSubmitting(null);
     }
   };
-
-  const coach = plans.find((p) => p.plan_id === "coach");
-  const plus = plans.find((p) => p.plan_id === "plus");
-  const free = plans.find((p) => p.plan_id === "free");
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]} testID="paywall-screen">
@@ -96,10 +121,10 @@ export default function PaywallScreen() {
             <View style={styles.brandDot} />
             <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
           </View>
-          <Text style={styles.heading}>GO{"\n"}UNLIMITED.</Text>
+          <Text style={styles.heading}>RIDE{"\n"}MORE WAVES.</Text>
           <Text style={styles.sub}>
-            One free analysis per day not enough? Unlock pro-grade depth and
-            join the global coach network.
+            Free plan gives you one analysis on us. Pick your level — from
+            Beginner to Coach Elite — to keep dialing in your technique.
           </Text>
         </View>
 
@@ -110,65 +135,83 @@ export default function PaywallScreen() {
           />
         ) : (
           <>
-            {free && <PlanCard plan={free} testID="plan-free" />}
+            {error ? (
+              <Text style={styles.error} testID="paywall-error">
+                {error}
+              </Text>
+            ) : null}
 
-            {plus && (
-              <View style={{ marginTop: spacing.sm }}>
-                <PlanCard plan={plus} testID="plan-plus" accent />
-                <TouchableOpacity
-                  style={[styles.plusBtn, submitting && { opacity: 0.5 }]}
-                  onPress={() => upgrade("plus")}
-                  disabled={submitting}
-                  testID="upgrade-plus-btn"
+            {sortedPlans.map((plan) => {
+              const isFree = plan.plan_id === "free";
+              const isCurrent = me?.tier === plan.plan_id;
+              const isHighlight = HIGHLIGHTED_TIERS.has(plan.plan_id);
+              const isCoach = plan.plan_id === "coach";
+              return (
+                <View
+                  key={plan.plan_id}
+                  style={{ marginBottom: spacing.sm }}
                 >
-                  {submitting ? (
-                    <ActivityIndicator color={colors.primary} />
-                  ) : (
-                    <>
+                  <PlanCard
+                    plan={plan}
+                    highlight={isCoach}
+                    accent={isHighlight && !isCoach}
+                    active={isCurrent}
+                    testID={`plan-${plan.plan_id}`}
+                  />
+                  {!isFree && !isCurrent && (
+                    <TouchableOpacity
+                      style={[
+                        isCoach ? styles.coachCta : styles.planCta,
+                        submitting === plan.plan_id && { opacity: 0.5 },
+                      ]}
+                      onPress={() => upgrade(plan.plan_id as PaidPlanId)}
+                      disabled={submitting !== null}
+                      testID={`upgrade-${plan.plan_id}-btn`}
+                    >
+                      {submitting === plan.plan_id ? (
+                        <ActivityIndicator
+                          color={isCoach ? "#000" : colors.primary}
+                        />
+                      ) : (
+                        <>
+                          <Ionicons
+                            name={isCoach ? "rocket" : "flash"}
+                            size={isCoach ? 16 : 14}
+                            color={isCoach ? "#000" : colors.primary}
+                          />
+                          <Text
+                            style={
+                              isCoach ? styles.coachCtaText : styles.planCtaText
+                            }
+                          >
+                            {isCoach
+                              ? `Upgrade to ${plan.name} – $${plan.amount}/mo`
+                              : `Choose ${plan.name} – $${plan.amount}/mo`}
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                  {isCurrent && !isFree ? (
+                    <View style={styles.currentRow}>
                       <Ionicons
-                        name="flash"
+                        name="checkmark-circle"
                         size={14}
-                        color={colors.primary}
+                        color={colors.success}
                       />
-                      <Text style={styles.plusText}>
-                        Get Plus – ${plus.amount}/mo
+                      <Text style={styles.currentText}>
+                        You're on this plan
                       </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            )}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
 
-            {coach && (
-              <View style={styles.coachWrap}>
-                <PlanCard plan={coach} highlight testID="plan-coach" />
-                {error ? (
-                  <Text style={styles.error} testID="paywall-error">
-                    {error}
-                  </Text>
-                ) : null}
-                <TouchableOpacity
-                  style={[styles.upgradeBtn, submitting && { opacity: 0.5 }]}
-                  onPress={() => upgrade("coach")}
-                  disabled={submitting}
-                  testID="upgrade-coach-btn"
-                >
-                  {submitting ? (
-                    <ActivityIndicator color="#000" />
-                  ) : (
-                    <>
-                      <Ionicons name="rocket" size={16} color="#000" />
-                      <Text style={styles.upgradeText}>
-                        Upgrade to Coach – ${coach.amount}/mo
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <Text style={styles.legal}>
-                  Secure checkout via Stripe. Cancel renewal anytime.
-                </Text>
-              </View>
-            )}
+            <Text style={styles.legal}>
+              Secure checkout via Stripe. Cancel renewal anytime from your
+              profile.
+            </Text>
           </>
         )}
       </ScrollView>
@@ -199,7 +242,9 @@ function PlanCard({
       testID={testID}
     >
       <View style={styles.cardHead}>
-        <Text style={[styles.planName, highlight && { color: colors.primary }]}>
+        <Text
+          style={[styles.planName, highlight && { color: colors.primary }]}
+        >
           {plan.name.toUpperCase()}
         </Text>
         {active && (
@@ -279,7 +324,7 @@ const styles = StyleSheet.create({
   sub: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   card: {
     marginHorizontal: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: 0,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -287,7 +332,7 @@ const styles = StyleSheet.create({
   },
   cardHighlight: { borderColor: colors.primary, borderWidth: 2 },
   cardAccent: { borderColor: colors.borderStrong },
-  plusBtn: {
+  planCta: {
     marginHorizontal: spacing.lg,
     borderWidth: 1,
     borderColor: colors.primary,
@@ -296,12 +341,29 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
-  plusText: {
+  planCtaText: {
     color: colors.primary,
     fontSize: 13,
     fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  coachCta: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginTop: spacing.xs,
+  },
+  coachCtaText: {
+    color: "#000",
+    fontSize: 14,
+    fontWeight: "900",
     letterSpacing: 1,
     textTransform: "uppercase",
   },
@@ -322,7 +384,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
-  activeText: { color: "#000", fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
+  activeText: {
+    color: "#000",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
   priceRow: { marginBottom: spacing.md },
   price: {
     color: colors.textPrimary,
@@ -337,21 +404,17 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   featureText: { color: colors.textPrimary, fontSize: 13, flex: 1 },
-  coachWrap: { marginTop: spacing.sm },
-  upgradeBtn: {
-    marginHorizontal: spacing.lg,
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
+  currentRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10,
-    marginTop: spacing.md,
+    gap: 6,
+    marginTop: spacing.xs,
   },
-  upgradeText: {
-    color: "#000",
-    fontSize: 14,
-    fontWeight: "900",
+  currentText: {
+    color: colors.success,
+    fontSize: 12,
+    fontWeight: "700",
     letterSpacing: 1,
     textTransform: "uppercase",
   },
@@ -359,12 +422,13 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     textAlign: "center",
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   error: {
     color: colors.error,
     fontSize: 13,
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
 });

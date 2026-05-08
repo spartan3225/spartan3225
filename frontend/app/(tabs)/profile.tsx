@@ -76,9 +76,13 @@ export default function ProfileScreen() {
   }
 
   const isCoach = user.tier === "coach";
-  const isPlus = user.tier === "plus";
-  const isPaid = isCoach || isPlus;
-  const tierLabel = isCoach ? "COACH PLAN" : isPlus ? "PLUS PLAN" : "FREE PLAN";
+  const PAID_TIERS = ["beginner", "plus", "intermediate", "advanced", "pro", "coach"];
+  const isPaid = PAID_TIERS.includes(user.tier || "free");
+  const isFree = (user.tier || "free") === "free";
+  const isLifetime = isFree;
+  const tierLabel = isPaid
+    ? `${(user.tier || "").toUpperCase()} PLAN`
+    : "FREE PLAN";
   const expDate = user.subscription_expires_at
     ? new Date(user.subscription_expires_at).toLocaleDateString()
     : null;
@@ -117,7 +121,7 @@ export default function ProfileScreen() {
                     testID="tier-badge"
                   >
                     <Ionicons
-                      name={isCoach ? "ribbon" : isPlus ? "flash" : "person"}
+                      name={isCoach ? "ribbon" : isPaid ? "flash" : "person"}
                       size={11}
                       color={isPaid ? "#000" : colors.textPrimary}
                       style={{ marginRight: 4 }}
@@ -142,7 +146,11 @@ export default function ProfileScreen() {
           <View style={styles.quotaCard} testID="quota-card">
             <View style={{ flex: 1 }}>
               <Text style={styles.quotaLabel}>
-                {isCoach ? "ANALYSES TODAY" : "QUOTA TODAY"}
+                {isCoach
+                  ? "ANALYSES TODAY"
+                  : isLifetime
+                  ? "LIFETIME QUOTA"
+                  : "QUOTA TODAY"}
               </Text>
               <Text style={styles.quotaValue}>
                 {isCoach
@@ -155,7 +163,11 @@ export default function ProfileScreen() {
               {!isCoach ? (
                 <Text style={styles.quotaSub}>
                   {quota && quota.remaining > 0
-                    ? `${quota.remaining} left today`
+                    ? isLifetime
+                      ? `${quota.remaining} free analysis left`
+                      : `${quota.remaining} left today`
+                    : isLifetime
+                    ? "Free analysis used. Upgrade to continue."
                     : "Daily limit reached. Upgrade for more."}
                 </Text>
               ) : null}

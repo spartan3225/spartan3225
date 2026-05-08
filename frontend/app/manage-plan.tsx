@@ -89,7 +89,10 @@ export default function ManagePlan() {
     );
   }
 
+  const PAID_TIERS = ["beginner", "plus", "intermediate", "advanced", "pro", "coach"];
+  const isPaid = PAID_TIERS.includes(user.tier || "free");
   const isCoach = user.tier === "coach";
+  const tierDisplay = (user.tier || "free").toUpperCase();
   const expDate = user.subscription_expires_at
     ? new Date(user.subscription_expires_at)
     : null;
@@ -111,9 +114,9 @@ export default function ManagePlan() {
         <View style={styles.card}>
           <Text style={styles.label}>CURRENT PLAN</Text>
           <Text style={styles.planName}>
-            {isCoach ? "COACH" : "FREE"}
+            {tierDisplay}
           </Text>
-          {isCoach && expDate ? (
+          {isPaid && expDate ? (
             <Text style={styles.exp}>
               {cancelled ? "Ends on " : "Renews on "}
               {expDate.toLocaleDateString(undefined, {
@@ -135,7 +138,7 @@ export default function ManagePlan() {
           )}
         </View>
 
-        {isCoach ? (
+        {isPaid ? (
           <>
             <TouchableOpacity
               style={styles.outlineBtn}
@@ -143,7 +146,9 @@ export default function ManagePlan() {
               testID="extend-plan-btn"
             >
               <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
-              <Text style={styles.outlineBtnText}>Extend +1 month</Text>
+              <Text style={styles.outlineBtnText}>
+                {isCoach ? "Extend +1 month" : "Change plan"}
+              </Text>
             </TouchableOpacity>
 
             {cancelled ? (
@@ -180,8 +185,8 @@ export default function ManagePlan() {
               </TouchableOpacity>
             )}
             <Text style={styles.legal}>
-              Cancelling stops auto-renewal at the period end. You keep Coach
-              access until then.
+              Cancelling stops auto-renewal at the period end. You keep your
+              current plan access until then.
             </Text>
           </>
         ) : (
@@ -191,7 +196,7 @@ export default function ManagePlan() {
             testID="upgrade-from-manage-btn"
           >
             <Ionicons name="rocket" size={14} color="#000" />
-            <Text style={styles.primaryBtnText}>Upgrade to Coach</Text>
+            <Text style={styles.primaryBtnText}>See Plans</Text>
           </TouchableOpacity>
         )}
       </View>

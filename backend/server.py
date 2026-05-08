@@ -45,31 +45,69 @@ EMERGENT_AUTH_SESSION_URL = (
 )
 
 # Server-defined plans (NEVER trust frontend for amount)
+# NOTE: "free" is NOT in PLANS — it has no Stripe checkout. Free tier limit
+# is enforced as a *lifetime* cap (1 analysis ever), not a daily cap.
 PLANS: dict[str, dict] = {
+    "beginner": {
+        "name": "Beginner",
+        "amount": 5.00,
+        "currency": "usd",
+        "interval_days": 30,
+        "description": "Beginner Plan – Monthly",
+        "daily_limit": 1,
+    },
     "plus": {
         "name": "Plus",
-        "amount": 9.99,
+        "amount": 12.00,
         "currency": "usd",
         "interval_days": 30,
         "description": "Plus Plan – Monthly",
         "daily_limit": 3,
     },
+    "intermediate": {
+        "name": "Intermediate",
+        "amount": 20.00,
+        "currency": "usd",
+        "interval_days": 30,
+        "description": "Intermediate Plan – Monthly",
+        "daily_limit": 6,
+    },
+    "advanced": {
+        "name": "Advanced",
+        "amount": 35.00,
+        "currency": "usd",
+        "interval_days": 30,
+        "description": "Advanced Plan – Monthly",
+        "daily_limit": 10,
+    },
+    "pro": {
+        "name": "Pro",
+        "amount": 60.00,
+        "currency": "usd",
+        "interval_days": 30,
+        "description": "Pro Plan – Monthly",
+        "daily_limit": 15,
+    },
     "coach": {
-        "name": "Coach",
+        "name": "Coach Elite",
         "amount": 120.00,
         "currency": "usd",
         "interval_days": 30,
-        "description": "Coach Plan – Monthly",
+        "description": "Coach Elite Plan – Monthly",
         "daily_limit": -1,  # unlimited
     },
 }
 
-FREE_DAILY_LIMIT = 1
-TIER_DAILY_LIMITS = {
-    "free": FREE_DAILY_LIMIT,
-    "plus": PLANS["plus"]["daily_limit"],
-    "coach": PLANS["coach"]["daily_limit"],
+# Free tier has a LIFETIME cap, not a daily cap.
+FREE_LIFETIME_LIMIT = 1
+
+# Daily limits map for paid tiers (free tier handled separately as lifetime).
+TIER_DAILY_LIMITS: dict[str, int] = {
+    plan_id: plan["daily_limit"] for plan_id, plan in PLANS.items()
 }
+
+# All tiers that count as "paid" subscriptions (used for expiry checks etc.).
+PAID_TIERS = set(PLANS.keys())
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -226,7 +264,7 @@ def _is_coach_active(user_doc: dict) -> bool:
 
 async def _refresh_tier_if_expired(user_doc: dict) -> dict:
     """Demote a user back to 'free' if subscription expired."""
-    if user_doc.get("tier") in {"coach", "plus"} and not _is_paid_active(user_doc):
+    if user_doc.get("tier") in PAID_TIERS and not _is_paid_active(user_doc):
         await db.users.update_one(
             {"user_id": user_doc["user_id"]},
             {"$set": {"tier": "free", "subscription_status": "expired"}},
@@ -237,7 +275,7 @@ async def _refresh_tier_if_expired(user_doc: dict) -> dict:
 
 
 def _is_paid_active(user_doc: dict) -> bool:
-    if user_doc.get("tier") not in {"coach", "plus"}:
+    if user_doc.get("tier") not in PAID_TIERS:
         return False
     exp = user_doc.get("subscription_expires_at")
     if exp is None:
@@ -476,9 +514,26 @@ async def analyse_video_with_gemini(
 # ---------------- Analysis routes ----------------
 @api_router.get("/analyses/quota")
 async def get_quota(user: User = Depends(get_current_user)):
-    limit = TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT)
+    # Free tier: lifetime cap (1 analysis ever) — not daily.
+    if user.tier == "free":
+        used_total = await db.analyses.count_documents({"user_id": user.user_id})
+        return {
+            "tier": user.tier,
+            "remaining": max(0, FREE_LIFETIME_LIMIT - used_total),
+            "limit": FREE_LIFETIME_LIMIT,
+            "used_today": used_total,
+            "is_lifetime": True,
+        }
+
+    limit = TIER_DAILY_LIMITS.get(user.tier, FREE_LIFETIME_LIMIT)
     if limit == -1:
-        return {"tier": user.tier, "remaining": -1, "limit": -1, "used_today": 0}
+        return {
+            "tier": user.tier,
+            "remaining": -1,
+            "limit": -1,
+            "used_today": 0,
+            "is_lifetime": False,
+        }
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -490,6 +545,7 @@ async def get_quota(user: User = Depends(get_current_user)):
         "remaining": max(0, limit - used),
         "limit": limit,
         "used_today": used,
+        "is_lifetime": False,
     }
 
 
@@ -527,21 +583,33 @@ async def create_analysis(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    # Enforce daily limit by tier
-    limit = TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT)
-    if limit != -1:
-        today_start = datetime.now(timezone.utc).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        used = await db.analyses.count_documents(
-            {"user_id": user.user_id, "created_at": {"$gte": today_start}}
-        )
-        if used >= limit:
-            tier_label = (user.tier or "free").capitalize()
+    # Enforce limit by tier.
+    # Free tier: lifetime cap. Paid tiers: per-day cap.
+    if user.tier == "free":
+        used_total = await db.analyses.count_documents({"user_id": user.user_id})
+        if used_total >= FREE_LIFETIME_LIMIT:
             raise HTTPException(
                 status_code=402,
-                detail=f"{tier_label} plan limit of {limit} {'analyses' if limit != 1 else 'analysis'} per day reached. Upgrade for more.",
+                detail=(
+                    f"Free plan allows only {FREE_LIFETIME_LIMIT} analysis ever. "
+                    "Upgrade to a paid plan to keep analysing."
+                ),
             )
+    else:
+        limit = TIER_DAILY_LIMITS.get(user.tier, FREE_LIFETIME_LIMIT)
+        if limit != -1:
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            used = await db.analyses.count_documents(
+                {"user_id": user.user_id, "created_at": {"$gte": today_start}}
+            )
+            if used >= limit:
+                tier_label = (user.tier or "free").capitalize()
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"{tier_label} plan limit of {limit} {'analyses' if limit != 1 else 'analysis'} per day reached. Upgrade for more.",
+                )
 
     analysis_id = f"ana_{uuid.uuid4().hex[:14]}"
     ext = (file.filename or "video.mp4").split(".")[-1].lower()
@@ -849,51 +917,110 @@ async def get_public_coach(user_id: str):
 # ---------------- Plans & Stripe ----------------
 @api_router.get("/plans")
 async def get_plans():
+    plans_out = [
+        {
+            "plan_id": "free",
+            "name": "Free",
+            "amount": 0.0,
+            "currency": "usd",
+            "features": [
+                f"{FREE_LIFETIME_LIMIT} AI video analysis (lifetime)",
+                "Standard depth analysis",
+                "Personal session history",
+            ],
+            "daily_limit": FREE_LIFETIME_LIMIT,
+            "is_lifetime": True,
+        },
+        {
+            "plan_id": "beginner",
+            "name": "Beginner",
+            "amount": PLANS["beginner"]["amount"],
+            "currency": PLANS["beginner"]["currency"],
+            "features": [
+                f"{PLANS['beginner']['daily_limit']} AI analysis per day",
+                "Standard depth analysis",
+                "Personal session history",
+            ],
+            "daily_limit": PLANS["beginner"]["daily_limit"],
+            "interval": "month",
+        },
+        {
+            "plan_id": "plus",
+            "name": "Plus",
+            "amount": PLANS["plus"]["amount"],
+            "currency": PLANS["plus"]["currency"],
+            "features": [
+                f"{PLANS['plus']['daily_limit']} AI analyses per day",
+                "Standard depth + extra detail",
+                "Priority queue",
+                "Browse public coach directory",
+            ],
+            "daily_limit": PLANS["plus"]["daily_limit"],
+            "interval": "month",
+        },
+        {
+            "plan_id": "intermediate",
+            "name": "Intermediate",
+            "amount": PLANS["intermediate"]["amount"],
+            "currency": PLANS["intermediate"]["currency"],
+            "features": [
+                f"{PLANS['intermediate']['daily_limit']} AI analyses per day",
+                "Deeper technical breakdown",
+                "Priority queue",
+                "Browse public coach directory",
+            ],
+            "daily_limit": PLANS["intermediate"]["daily_limit"],
+            "interval": "month",
+        },
+        {
+            "plan_id": "advanced",
+            "name": "Advanced",
+            "amount": PLANS["advanced"]["amount"],
+            "currency": PLANS["advanced"]["currency"],
+            "features": [
+                f"{PLANS['advanced']['daily_limit']} AI analyses per day",
+                "Pro-tour deeper breakdown",
+                "Priority queue",
+                "Browse public coach directory",
+            ],
+            "daily_limit": PLANS["advanced"]["daily_limit"],
+            "interval": "month",
+        },
+        {
+            "plan_id": "pro",
+            "name": "Pro",
+            "amount": PLANS["pro"]["amount"],
+            "currency": PLANS["pro"]["currency"],
+            "features": [
+                f"{PLANS['pro']['daily_limit']} AI analyses per day",
+                "Pro-tour deeper breakdown",
+                "Top-priority queue",
+                "Browse public coach directory",
+                "Share clips with any coach",
+            ],
+            "daily_limit": PLANS["pro"]["daily_limit"],
+            "interval": "month",
+        },
+        {
+            "plan_id": "coach",
+            "name": "Coach Elite",
+            "amount": PLANS["coach"]["amount"],
+            "currency": PLANS["coach"]["currency"],
+            "features": [
+                "UNLIMITED AI video analyses",
+                "Pro-tour deeper breakdown",
+                "Public coach profile in directory",
+                "Receive shared clips from students",
+                "Comment on student analyses",
+            ],
+            "daily_limit": -1,
+            "interval": "month",
+        },
+    ]
     return {
-        "plans": [
-            {
-                "plan_id": "free",
-                "name": "Free",
-                "amount": 0.0,
-                "currency": "usd",
-                "features": [
-                    f"{FREE_DAILY_LIMIT} AI video analysis per day",
-                    "Standard depth analysis",
-                    "Personal session history",
-                ],
-                "daily_limit": FREE_DAILY_LIMIT,
-            },
-            {
-                "plan_id": "plus",
-                "name": "Plus",
-                "amount": PLANS["plus"]["amount"],
-                "currency": PLANS["plus"]["currency"],
-                "features": [
-                    f"{PLANS['plus']['daily_limit']} AI analyses per day",
-                    "Standard depth + extra detail",
-                    "Priority queue",
-                    "Browse public coach directory",
-                ],
-                "daily_limit": PLANS["plus"]["daily_limit"],
-                "interval": "month",
-            },
-            {
-                "plan_id": "coach",
-                "name": "Coach",
-                "amount": PLANS["coach"]["amount"],
-                "currency": PLANS["coach"]["currency"],
-                "features": [
-                    "UNLIMITED AI video analyses",
-                    "Pro-tour deeper breakdown",
-                    "Public coach profile in directory",
-                    "Receive shared clips from students",
-                    "Comment on student analyses",
-                ],
-                "daily_limit": -1,
-                "interval": "month",
-            },
-        ],
-        "free_daily_limit": FREE_DAILY_LIMIT,
+        "plans": plans_out,
+        "free_lifetime_limit": FREE_LIFETIME_LIMIT,
+        "free_daily_limit": FREE_LIFETIME_LIMIT,  # legacy key for old clients
     }
 
 
