@@ -158,7 +158,7 @@ export default function PaywallScreen() {
                     active={isCurrent}
                     testID={`plan-${plan.plan_id}`}
                   />
-                  {!isFree && !isCurrent && (
+                  {!isFree && (
                     <TouchableOpacity
                       style={[
                         isCoach ? styles.coachCta : styles.planCta,
@@ -175,7 +175,13 @@ export default function PaywallScreen() {
                       ) : (
                         <>
                           <Ionicons
-                            name={isCoach ? "rocket" : "flash"}
+                            name={
+                              isCurrent
+                                ? "refresh"
+                                : isCoach
+                                ? "rocket"
+                                : "flash"
+                            }
                             size={isCoach ? 16 : 14}
                             color={isCoach ? "#000" : colors.primary}
                           />
@@ -184,7 +190,9 @@ export default function PaywallScreen() {
                               isCoach ? styles.coachCtaText : styles.planCtaText
                             }
                           >
-                            {isCoach
+                            {isCurrent
+                              ? `Renew ${plan.name} – $${plan.amount}/mo`
+                              : isCoach
                               ? `Upgrade to ${plan.name} – $${plan.amount}/mo`
                               : `Choose ${plan.name} – $${plan.amount}/mo`}
                           </Text>
