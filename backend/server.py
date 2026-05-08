@@ -43,16 +43,30 @@ EMERGENT_AUTH_SESSION_URL = (
 
 # Server-defined plans (NEVER trust frontend for amount)
 PLANS: dict[str, dict] = {
+    "plus": {
+        "name": "Plus",
+        "amount": 9.99,
+        "currency": "usd",
+        "interval_days": 30,
+        "description": "Plus Plan – Monthly",
+        "daily_limit": 3,
+    },
     "coach": {
         "name": "Coach",
         "amount": 120.00,
         "currency": "usd",
         "interval_days": 30,
         "description": "Coach Plan – Monthly",
-    }
+        "daily_limit": -1,  # unlimited
+    },
 }
 
 FREE_DAILY_LIMIT = 1
+TIER_DAILY_LIMITS = {
+    "free": FREE_DAILY_LIMIT,
+    "plus": PLANS["plus"]["daily_limit"],
+    "coach": PLANS["coach"]["daily_limit"],
+}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -322,12 +336,35 @@ async def logout(authorization: Optional[str] = Header(None)):
 
 
 # ---------------- AI core ----------------
-SYSTEM_PROMPT_BASE = """You are SurfAI Coach, an elite surfing technique analyst with the experience of a world-tour coach.
-You receive a short video of a surfer attempting a wave. Your job is to analyse the surfer's MOVEMENT,
-STANCE, BALANCE, TIMING, POP-UP, BOTTOM-TURN, TOP-TURN, RAIL CONTROL and OVERALL FLOW.
+SYSTEM_PROMPT_BASE = """You are SurfCoach23 — an elite, world-tour-grade surf technique analyst.
+Your knowledge fuses the methodologies of:
+- Martin Dunn (Surfing Coach International) for performance progression frameworks
+- Andy King (mentor of John John Florence) for power-surfing & rail engagement
+- Carlos Burle (big-wave) for paddle, drop and commitment cues
+- Brad Gerlach's "Wave Ki" for body alignment and stance
+- Filipe Toledo / Italo Ferreira aerial mechanics
+- Kelly Slater's flow & line theory
+- Gabriel Medina's barrel reading & turn timing
+- ISA / WSL judging criteria (commitment, difficulty, innovation, combination, variety, speed-power-flow)
 
-Be specific, candid and actionable. Do NOT be generic. If you cannot see a clear surfer in the video,
-say so honestly in the summary and use a low score.
+You receive a short video of a surfer attempting a wave. Your job is to deliver a
+PROFESSIONAL, frame-precise analysis of:
+- POSITIONING (lineup read, take-off zone)
+- POP-UP mechanics (timing, foot placement, hip drive)
+- STANCE (front-foot angle, knee bend, hip stack, head over toes)
+- BOTTOM TURN (compression, eye-line, rail-set, drive)
+- TOP TURN / SNAP (pivot point, weight transfer, recovery)
+- CARVE / CUTBACK (arc shape, spray release, re-engagement)
+- BARREL RIDING (line, stall, exit)
+- AERIALS (launch, rotation, landing)
+- RAIL CONTROL & RHYTHM (toe/heel transitions, flow between maneuvers)
+- COMMITMENT & RISK (does the surfer go FOR it?)
+
+Be specific, candid and actionable. Reference the body part / board area / wave
+section explicitly. Use precise surfing vocabulary (e.g., "lay-back snap",
+"floater re-entry", "frontside hack", "stink-bug stance", "trim line").
+If you cannot see a clear surfer in the video, say so honestly in the summary
+and use a low score.
 
 Return ONLY valid JSON (no markdown fences, no commentary) matching this schema EXACTLY:
 
@@ -335,31 +372,32 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching this schema 
   "title": "<3-6 word session title>",
   "score": <integer 0-100>,
   "overall_rating": "<one of: Beginner, Intermediate, Advanced, Pro>",
-  "summary": "<2-3 sentence overall verdict>",
+  "summary": "<2-3 sentence world-tour-coach verdict>",
   "strengths": ["<short bullet>", "..."],
   "mistakes": [
     {
-      "title": "<short mistake name>",
-      "detail": "<1-2 sentences explaining WHAT is wrong and WHY it hurts performance>",
+      "title": "<short mistake name in surf vocabulary>",
+      "detail": "<2-3 sentences: WHAT is wrong, WHY it costs power/score, HOW it differs from a Pro reference>",
       "severity": "<low|medium|high>",
       "timestamp": "<mm:ss in the video where it occurs, or null>"
     }
   ],
-  "corrections": ["<actionable fix>", "..."],
-  "tips": ["<tip>", "..."],
-  "drills": ["<drill>", "..."]
+  "corrections": ["<actionable fix referencing body mechanics>", "..."],
+  "tips": ["<world-tour-style tip>", "..."],
+  "drills": ["<concrete drill: dry-land, balance-board or in-water>", "..."]
 }
 
 Provide AT LEAST 3 mistakes (or fewer if surfing is exceptional), 3 corrections, 3 tips, 2 drills."""
 
 SYSTEM_PROMPT_COACH_EXTRA = """
 
-Because this surfer is on the COACH plan, deliver an even DEEPER, more advanced analysis:
-- 5+ mistakes with frame-precise timestamps
-- 5+ corrections including specific muscle/joint cues
-- 5+ tips referencing pro-tour technique vocabulary
-- 3+ drills (mix of dry-land, balance-board and in-water)
-- Mention specific equipment/board recommendations if visible weaknesses suggest a fin or volume issue."""
+Because this surfer is on the COACH plan, deliver an EVEN DEEPER pro-tour breakdown:
+- 5+ mistakes with frame-precise mm:ss timestamps
+- 5+ corrections including specific muscle/joint cues (e.g. "shift centre of mass forward 5–8cm over the front foot before bottom-turn release")
+- 5+ tips referencing pro-tour technique vocabulary and naming a Pro reference (Toledo / Medina / Italo / John John / Slater / Ramzi Boukhiam) for each
+- 3+ drills covering dry-land mobility, balance-board, AND in-water progressions
+- Comment on board choice / volume / fin setup if a flaw suggests it
+- Apply the WSL judging criteria (commitment, difficulty, innovation, combination, variety, speed/power/flow) score-by-score in the summary."""
 
 
 def _strip_json(text: str) -> str:
@@ -801,6 +839,21 @@ async def get_plans():
                     "Standard depth analysis",
                     "Personal session history",
                 ],
+                "daily_limit": FREE_DAILY_LIMIT,
+            },
+            {
+                "plan_id": "plus",
+                "name": "Plus",
+                "amount": PLANS["plus"]["amount"],
+                "currency": PLANS["plus"]["currency"],
+                "features": [
+                    f"{PLANS['plus']['daily_limit']} AI analyses per day",
+                    "Standard depth + extra detail",
+                    "Priority queue",
+                    "Browse public coach directory",
+                ],
+                "daily_limit": PLANS["plus"]["daily_limit"],
+                "interval": "month",
             },
             {
                 "plan_id": "coach",
@@ -809,11 +862,12 @@ async def get_plans():
                 "currency": PLANS["coach"]["currency"],
                 "features": [
                     "UNLIMITED AI video analyses",
-                    "Deeper, frame-precise pro breakdown",
+                    "Pro-tour deeper breakdown",
                     "Public coach profile in directory",
                     "Receive shared clips from students",
                     "Comment on student analyses",
                 ],
+                "daily_limit": -1,
                 "interval": "month",
             },
         ],

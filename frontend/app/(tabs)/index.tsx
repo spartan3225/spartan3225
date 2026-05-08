@@ -7,6 +7,8 @@ import {
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -18,6 +20,7 @@ import {
   User,
 } from "../../src/api";
 import { colors, scoreColor, spacing } from "../../src/theme";
+import { PRO_INSPIRATIONS } from "../../src/proInspirations";
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -175,7 +178,7 @@ export default function DashboardScreen() {
           <View style={styles.header}>
             <View style={styles.brandRow}>
               <View style={styles.brandDot} />
-              <Text style={styles.brandLabel}>SURF · AI</Text>
+              <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
             </View>
             <Text style={styles.greeting}>
               Hey, {user?.name?.split(" ")[0] || "Surfer"}
@@ -216,6 +219,33 @@ export default function DashboardScreen() {
               <Ionicons name="add" size={18} color="#000" />
               <Text style={styles.ctaText}>New Analysis</Text>
             </TouchableOpacity>
+
+            {/* Pro Inspirations carousel */}
+            <Text style={styles.sectionLabel}>Trained on the Pros</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginHorizontal: -spacing.lg, marginBottom: spacing.lg }}
+              contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 10 }}
+              testID="pro-inspirations"
+            >
+              {PRO_INSPIRATIONS.map((p) => (
+                <View
+                  key={p.name}
+                  style={styles.proCard}
+                  testID={`pro-${p.name.replace(/\s+/g, "-").toLowerCase()}`}
+                >
+                  <Image source={{ uri: p.image }} style={styles.proImage} />
+                  <View style={styles.proOverlay} />
+                  <View style={styles.proLabels}>
+                    <Text style={styles.proTag}>{p.tag}</Text>
+                    <Text style={styles.proName}>
+                      {p.name.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
 
             <Text style={styles.sectionLabel}>Past Analyses</Text>
           </View>
@@ -405,5 +435,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     maxWidth: 280,
+  },
+  proCard: {
+    width: 200,
+    height: 110,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  proImage: { width: "100%", height: "100%", resizeMode: "cover" },
+  proOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(10,10,10,0.45)",
+  },
+  proLabels: {
+    position: "absolute",
+    left: 12,
+    bottom: 10,
+    right: 12,
+  },
+  proTag: {
+    color: colors.primary,
+    fontSize: 9,
+    letterSpacing: 1.8,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  proName: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    letterSpacing: 0.5,
+    fontWeight: "900",
   },
 });

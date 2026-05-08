@@ -76,6 +76,9 @@ export default function ProfileScreen() {
   }
 
   const isCoach = user.tier === "coach";
+  const isPlus = user.tier === "plus";
+  const isPaid = isCoach || isPlus;
+  const tierLabel = isCoach ? "COACH PLAN" : isPlus ? "PLUS PLAN" : "FREE PLAN";
   const expDate = user.subscription_expires_at
     ? new Date(user.subscription_expires_at).toLocaleDateString()
     : null;
@@ -109,23 +112,23 @@ export default function ProfileScreen() {
                   <View
                     style={[
                       styles.tierBadge,
-                      isCoach && styles.tierBadgeCoach,
+                      isPaid && styles.tierBadgeCoach,
                     ]}
                     testID="tier-badge"
                   >
                     <Ionicons
-                      name={isCoach ? "ribbon" : "person"}
+                      name={isCoach ? "ribbon" : isPlus ? "flash" : "person"}
                       size={11}
-                      color={isCoach ? "#000" : colors.textPrimary}
+                      color={isPaid ? "#000" : colors.textPrimary}
                       style={{ marginRight: 4 }}
                     />
                     <Text
                       style={[
                         styles.tierText,
-                        isCoach && { color: "#000" },
+                        isPaid && { color: "#000" },
                       ]}
                     >
-                      {isCoach ? "COACH PLAN" : "FREE PLAN"}
+                      {tierLabel}
                     </Text>
                   </View>
                 </View>
@@ -139,42 +142,42 @@ export default function ProfileScreen() {
           <View style={styles.quotaCard} testID="quota-card">
             <View style={{ flex: 1 }}>
               <Text style={styles.quotaLabel}>
-                {isCoach ? "ANALYSES TODAY" : "FREE QUOTA TODAY"}
+                {isCoach ? "ANALYSES TODAY" : "QUOTA TODAY"}
               </Text>
               <Text style={styles.quotaValue}>
                 {isCoach
                   ? "Unlimited"
                   : `${(quota?.used_today ?? 0)} / ${(quota?.limit ?? 1)}`}
               </Text>
-              {isCoach && expDate ? (
+              {isPaid && expDate ? (
                 <Text style={styles.quotaSub}>Renews {expDate}</Text>
               ) : null}
               {!isCoach ? (
                 <Text style={styles.quotaSub}>
                   {quota && quota.remaining > 0
                     ? `${quota.remaining} left today`
-                    : "Daily limit reached. Upgrade for unlimited."}
+                    : "Daily limit reached. Upgrade for more."}
                 </Text>
               ) : null}
             </View>
             <TouchableOpacity
-              style={[styles.upgradeBtn, isCoach && styles.manageBtn]}
+              style={[styles.upgradeBtn, isPaid && styles.manageBtn]}
               onPress={() => router.push("/paywall" as any)}
-              testID={isCoach ? "manage-plan-btn" : "upgrade-btn"}
+              testID={isPaid ? "manage-plan-btn" : "upgrade-btn"}
             >
               <Ionicons
-                name={isCoach ? "settings-outline" : "rocket"}
+                name={isPaid ? "settings-outline" : "rocket"}
                 size={14}
-                color={isCoach ? colors.textPrimary : "#000"}
+                color={isPaid ? colors.textPrimary : "#000"}
                 style={{ marginRight: 6 }}
               />
               <Text
                 style={[
                   styles.upgradeBtnText,
-                  isCoach && { color: colors.textPrimary },
+                  isPaid && { color: colors.textPrimary },
                 ]}
               >
-                {isCoach ? "Plans" : "Upgrade"}
+                {isPaid ? "Plans" : "Upgrade"}
               </Text>
             </TouchableOpacity>
           </View>

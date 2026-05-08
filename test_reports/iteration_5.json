@@ -1,0 +1,59 @@
+{
+  "summary": "v1.3 SurfCoach23 fully verified end-to-end. New /app/backend/tests/test_v13_plus_tier.py covers all 5 requested scenarios (3 plans, free/coach quota, plus/coach checkout, invalid plan 400) — 11/11 PASS. Full backend regression: 66 passed / 3 skipped / 1 known pre-existing free-quota ordering failure (unrelated to v1.3). Frontend: login brand SURFCOACH·23 + RAMZI BOUKHIAM caption verified; dashboard carousel pro-inspirations renders all 5 testIDs (Ramzi/Italo/Medina/Toledo/Slater); profile tier badges = 'FREE PLAN' for free user and 'COACH PLAN' for coach user; paywall renders plan-free + plan-plus + plan-coach with upgrade-plus-btn ($9.99/mo) and upgrade-coach-btn ($120/mo). AI prompt v1.3 confirmed citing Filipe Toledo, Andy King, John John Florence, Gabriel Medina, Kelly Slater, Carlos Burle, Italo Ferreira in coach-tier tips.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/payments/status/{session_id}",
+        "issue": "Pre-existing v1.2 limitation: emergentintegrations CheckoutStatusResponse rejects Stripe StripeObject metadata. Endpoint degrades gracefully (200 + DB state, warning logged). Not regressed in v1.3."
+      },
+      {
+        "endpoint": "POST /api/analyses (free user)",
+        "issue": "Existing test test_surfai_api.py::test_create_analysis_uploads_and_runs_gemini fails when run after test_membership_coach_stripe.py because free user already used their 1/day quota. Pre-existing test-ordering issue, not a v1.3 regression. When run in isolation after quota reset, it PASSES."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/paywall",
+        "issues": [
+          "Hero brand label still reads 'SURF · COACH' (paywall.tsx line 89). Login and dashboard were rebranded to 'SURFCOACH · 23' but paywall hero was missed. Minor cosmetic — does not block functionality. Recommend updating brandLabel text in paywall.tsx for consistency."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "Image (login/dashboard/profile)",
+        "issue": "Console warns 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' Cosmetic only — does not break rendering. Move resizeMode out of StyleSheet into <Image resizeMode='cover' />."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v13_plus_tier.py",
+    "/app/test_reports/pytest/v13_results.xml",
+    "/app/test_reports/pytest/v13_full_results.xml"
+  ],
+  "action_items": [
+    "Optional: Update paywall.tsx hero brandLabel from 'SURF · COACH' → 'SURFCOACH · 23' for brand consistency (minor)",
+    "Optional: Migrate Image style.resizeMode → resizeMode prop (deprecation warning)"
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~1145 lines. PLANS dict + TIER_DAILY_LIMITS for plus tier are clean, but recommend extracting plans/payments into routers/payments.py.",
+    "/api/analyses/quota only returns the free-tier limit when user.tier!='coach' — but a 'plus' tier user (limit 3) would currently fall into the 'free' branch and report limit=1. Consider extending get_quota to use TIER_DAILY_LIMITS[user.tier] so plus users see remaining out of 3, not 1. Same goes for the free-tier enforcement at L511–522 in create_analysis (always uses FREE_DAILY_LIMIT regardless of plus tier).",
+    "Plus-tier daily-limit enforcement is NOT yet wired into POST /api/analyses — code only allows unlimited for tier=='coach' and otherwise applies FREE_DAILY_LIMIT=1. Once a user upgrades to Plus, they will still be capped at 1/day instead of 3. (No test exists yet because there is no demo Plus user, but this should be patched alongside the v1.3 frontend.)",
+    "_apply_subscription_if_paid hard-codes tier='coach' on payment success — Plus-tier purchases will INCORRECTLY upgrade the user to coach unlimited, not to plus tier with 3/day. CRITICAL bug for Plus billing once a real customer pays $9.99."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v13_plus_tier.py (new — 11 tests covering plans/quota/checkout for v1.3)",
+    "/tmp/test_surf.mp4 (re-downloaded — sample mp4 used by existing tests)"
+  ],
+  "success_rate": {"backend": "100% on v1.3 (11/11) + 66/67 full regression", "frontend": "100% on all 4 requested screens"},
+  "seed_data_creation": "Re-seeded demo_token_active (free) and demo_coach_token (coach, public profile) per /app/memory/test_credentials.md. Cleared analyses + payment_transactions for both users before run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v1.3 backend tests live at /app/backend/tests/test_v13_plus_tier.py — 11 tests, all green. AI prompt confirmed to cite Toledo/Andy King/JJF/Medina/Slater/Burle/Italo in coach-tier tips (verified by inspecting db.analyses for user_coach_67890 after a real upload). Two CRITICAL Plus-tier follow-up bugs to flag to E1: (a) /api/analyses still uses FREE_DAILY_LIMIT=1 for any non-coach user — Plus users are NOT getting their 3/day; (b) _apply_subscription_if_paid always activates 'coach' tier — Plus checkout would WRONGLY upgrade buyer to unlimited Coach. Both are server-side and need fixes before Plus billing goes live. Frontend is clean except minor paywall brandLabel = 'SURF · COACH' (others rebranded to 'SURFCOACH · 23').",
+  "rca_of_issue": "N/A — no in-scope bugs blocking v1.3. Two out-of-scope Plus-tier billing/quota gaps surfaced via code review (see critical_code_review_comments) and should be addressed before public Plus rollout."
+}

@@ -35,7 +35,7 @@ export default function PaywallScreen() {
     })();
   }, []);
 
-  const upgrade = async () => {
+  const upgrade = async (planId: "plus" | "coach") => {
     setError(null);
     setSubmitting(true);
     try {
@@ -45,7 +45,7 @@ export default function PaywallScreen() {
       } else {
         originUrl = (process.env.EXPO_PUBLIC_BACKEND_URL as string) || "";
       }
-      const { url } = await createCheckout("coach", originUrl);
+      const { url } = await createCheckout(planId, originUrl);
       if (Platform.OS === "web") {
         window.location.href = url;
       } else {
@@ -69,6 +69,7 @@ export default function PaywallScreen() {
   };
 
   const coach = plans.find((p) => p.plan_id === "coach");
+  const plus = plans.find((p) => p.plan_id === "plus");
   const free = plans.find((p) => p.plan_id === "free");
 
   return (
@@ -101,14 +102,38 @@ export default function PaywallScreen() {
           />
         ) : (
           <>
-            {free && <PlanCard plan={free} active testID="plan-free" />}
+            {free && <PlanCard plan={free} testID="plan-free" />}
+
+            {plus && (
+              <View style={{ marginTop: spacing.sm }}>
+                <PlanCard plan={plus} testID="plan-plus" accent />
+                <TouchableOpacity
+                  style={[styles.plusBtn, submitting && { opacity: 0.5 }]}
+                  onPress={() => upgrade("plus")}
+                  disabled={submitting}
+                  testID="upgrade-plus-btn"
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="flash"
+                        size={14}
+                        color={colors.primary}
+                      />
+                      <Text style={styles.plusText}>
+                        Get Plus – ${plus.amount}/mo
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
             {coach && (
               <View style={styles.coachWrap}>
-                <PlanCard
-                  plan={coach}
-                  highlight
-                  testID="plan-coach"
-                />
+                <PlanCard plan={coach} highlight testID="plan-coach" />
                 {error ? (
                   <Text style={styles.error} testID="paywall-error">
                     {error}
@@ -116,7 +141,7 @@ export default function PaywallScreen() {
                 ) : null}
                 <TouchableOpacity
                   style={[styles.upgradeBtn, submitting && { opacity: 0.5 }]}
-                  onPress={upgrade}
+                  onPress={() => upgrade("coach")}
                   disabled={submitting}
                   testID="upgrade-coach-btn"
                 >
@@ -124,11 +149,7 @@ export default function PaywallScreen() {
                     <ActivityIndicator color="#000" />
                   ) : (
                     <>
-                      <Ionicons
-                        name="rocket"
-                        size={16}
-                        color="#000"
-                      />
+                      <Ionicons name="rocket" size={16} color="#000" />
                       <Text style={styles.upgradeText}>
                         Upgrade to Coach – ${coach.amount}/mo
                       </Text>
@@ -136,7 +157,7 @@ export default function PaywallScreen() {
                   )}
                 </TouchableOpacity>
                 <Text style={styles.legal}>
-                  Secure checkout via Stripe. Cancel anytime.
+                  Secure checkout via Stripe. Cancel renewal anytime.
                 </Text>
               </View>
             )}
@@ -151,16 +172,22 @@ function PlanCard({
   plan,
   highlight,
   active,
+  accent,
   testID,
 }: {
   plan: Plan;
   highlight?: boolean;
   active?: boolean;
+  accent?: boolean;
   testID?: string;
 }) {
   return (
     <View
-      style={[styles.card, highlight && styles.cardHighlight]}
+      style={[
+        styles.card,
+        highlight && styles.cardHighlight,
+        accent && styles.cardAccent,
+      ]}
       testID={testID}
     >
       <View style={styles.cardHead}>
@@ -244,6 +271,25 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   cardHighlight: { borderColor: colors.primary, borderWidth: 2 },
+  cardAccent: { borderColor: colors.borderStrong },
+  plusBtn: {
+    marginHorizontal: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: spacing.sm,
+  },
+  plusText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
   cardHead: {
     flexDirection: "row",
     alignItems: "center",

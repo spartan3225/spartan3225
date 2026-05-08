@@ -14,8 +14,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing } from "../src/theme";
 import { fetchMe, exchangeSessionId } from "../src/api";
 
+// Hero: dramatic surf-action photograph in the spirit of Ramzi Boukhiam
 const HERO_IMAGE =
-  "https://static.prod-images.emergentagent.com/jobs/bade60e2-d6bb-40f2-9843-b258282a5a76/images/742e6d4b2cb10a6cef4e0bbd3eb96e3b16c6fe7bd5bb48059af9f3000f9d4d96.png";
+  "https://images.unsplash.com/photo-1502933691298-84fc14542831?w=1400&q=80&auto=format&fit=crop";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -98,16 +99,20 @@ export default function LoginScreen() {
       <View style={styles.content}>
         <View style={styles.brandRow}>
           <View style={styles.brandDot} />
-          <Text style={styles.brandLabel}>SURF · AI</Text>
+          <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
         </View>
 
         <Text style={styles.title} testID="login-title">
           MASTER{"\n"}EVERY{"\n"}WAVE.
         </Text>
         <Text style={styles.subtitle}>
-          Upload a clip. Get instant frame-by-frame technique analysis from an
-          AI surf coach.
+          Upload a clip. Get instant pro-tour technique analysis trained on the
+          movement of Ramzi Boukhiam, Italo Ferreira, Gabriel Medina & more.
         </Text>
+        <View style={styles.heroFootRow}>
+          <Text style={styles.heroFootLabel}>INSPIRED BY</Text>
+          <Text style={styles.heroFootName}>RAMZI BOUKHIAM</Text>
+        </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
@@ -271,6 +276,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     textAlign: "center",
     marginTop: spacing.md,
+  },
+  heroFootRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: -4,
+    marginBottom: spacing.md,
+  },
+  heroFootLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
+    letterSpacing: 2,
+    fontWeight: "800",
+  },
+  heroFootName: {
+    color: colors.primary,
+    fontSize: 11,
+    letterSpacing: 2,
+    fontWeight: "800",
   },
   error: {
     color: colors.error,
