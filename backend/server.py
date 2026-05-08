@@ -16,12 +16,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-from emergentintegrations.payments.stripe.checkout import (
-    StripeCheckout,
-    CheckoutSessionRequest,
-    CheckoutSessionResponse,
-    CheckoutStatusResponse,
-)
+import stripe
 
 
 ROOT_DIR = Path(__file__).parent
@@ -36,7 +31,15 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-STRIPE_API_KEY = os.environ.get("STRIPE_API_KEY", "")
+# Prefer real Stripe secret key when provided; fall back to legacy proxy key
+STRIPE_SECRET_KEY = (
+    os.environ.get("STRIPE_SECRET_KEY")
+    or os.environ.get("STRIPE_API_KEY")
+    or ""
+)
+STRIPE_API_KEY = STRIPE_SECRET_KEY  # keep legacy name in scope
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+stripe.api_key = STRIPE_SECRET_KEY
 EMERGENT_AUTH_SESSION_URL = (
     "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 )
@@ -904,42 +907,54 @@ async def create_checkout(
         raise HTTPException(status_code=400, detail="Invalid plan")
     plan = PLANS[req.plan_id]
 
-    # Build dynamic URLs from frontend origin
     origin = req.origin_url.rstrip("/")
     success_url = f"{origin}/payment-success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment-cancel"
 
-    host_url = str(request.base_url).rstrip("/")
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    stripe_checkout = StripeCheckout(
-        api_key=STRIPE_API_KEY, webhook_url=webhook_url
-    )
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": plan["currency"],
+                        "product_data": {
+                            "name": plan["description"],
+                            "description": f"SurfCoach23 {plan['name']} – {plan['interval_days']} days",
+                        },
+                        "unit_amount": int(round(plan["amount"] * 100)),
+                    },
+                    "quantity": 1,
+                }
+            ],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            customer_email=user.email,
+            metadata={
+                "user_id": user.user_id,
+                "email": user.email,
+                "plan_id": req.plan_id,
+                "source": "surfcoach23_mobile",
+            },
+        )
+    except Exception as e:
+        logger.exception("Stripe checkout creation failed")
+        raise HTTPException(status_code=500, detail=f"Stripe error: {e}")
 
-    metadata = {
-        "user_id": user.user_id,
-        "email": user.email,
-        "plan_id": req.plan_id,
-        "source": "surfai_mobile",
-    }
-    checkout_request = CheckoutSessionRequest(
-        amount=float(plan["amount"]),
-        currency=plan["currency"],
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata=metadata,
-    )
-    session = await stripe_checkout.create_checkout_session(checkout_request)
-
-    # Store transaction (initiated)
     await db.payment_transactions.insert_one(
         {
-            "session_id": session.session_id,
+            "session_id": session.id,
             "user_id": user.user_id,
             "email": user.email,
             "plan_id": req.plan_id,
             "amount": float(plan["amount"]),
             "currency": plan["currency"],
-            "metadata": metadata,
+            "metadata": {
+                "user_id": user.user_id,
+                "email": user.email,
+                "plan_id": req.plan_id,
+            },
             "payment_status": "initiated",
             "status": "open",
             "created_at": datetime.now(timezone.utc),
@@ -947,11 +962,11 @@ async def create_checkout(
         }
     )
 
-    return CheckoutSessionOut(url=session.url, session_id=session.session_id)
+    return CheckoutSessionOut(url=session.url, session_id=session.id)
 
 
 async def _apply_subscription_if_paid(session_id: str) -> dict:
-    """Idempotently activate Coach subscription when payment is paid."""
+    """Idempotently activate subscription when payment is paid."""
     txn = await db.payment_transactions.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
@@ -961,25 +976,18 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
     if txn.get("payment_status") == "paid" and txn.get("applied"):
         return {"applied": True, "already": True, "plan_id": txn.get("plan_id")}
 
-    host_dummy = "http://localhost:8001"
-    stripe_checkout = StripeCheckout(
-        api_key=STRIPE_API_KEY, webhook_url=f"{host_dummy}/api/webhook/stripe"
-    )
     try:
-        status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(
-            session_id
-        )
+        s = stripe.checkout.Session.retrieve(session_id)
         update = {
-            "status": status.status,
-            "payment_status": status.payment_status,
-            "amount_total": status.amount_total,
-            "currency": status.currency,
+            "status": s.status,
+            "payment_status": s.payment_status,
+            "amount_total": s.amount_total,
+            "currency": s.currency,
             "last_checked_at": datetime.now(timezone.utc),
         }
-        is_paid = status.payment_status == "paid"
+        is_paid = s.payment_status == "paid"
     except Exception as e:
-        # emergentintegrations may fail to validate Stripe metadata; degrade gracefully
-        logger.warning(f"get_checkout_status failed for {session_id}: {e}")
+        logger.warning(f"Stripe retrieve failed for {session_id}: {e}")
         update = {"last_checked_at": datetime.now(timezone.utc)}
         is_paid = txn.get("payment_status") == "paid"
 
@@ -992,7 +1000,7 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
                 {"user_id": txn["user_id"]}, {"_id": 0}
             )
             base_expiry = now
-            if user_doc and _is_coach_active(user_doc):
+            if user_doc and _is_paid_active(user_doc):
                 exp = user_doc.get("subscription_expires_at")
                 if isinstance(exp, str):
                     exp = datetime.fromisoformat(exp)
@@ -1007,6 +1015,7 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
                         "tier": plan_id,
                         "subscription_status": "active",
                         "subscription_expires_at": new_expiry,
+                        "cancel_at_period_end": False,
                     }
                 },
             )
@@ -1041,31 +1050,66 @@ async def payment_status(
     txn = await db.payment_transactions.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
+    applied = bool(txn.get("applied"))
     return PaymentStatusOut(
         session_id=session_id,
         status=txn.get("status") or "open",
         payment_status=txn.get("payment_status") or "initiated",
         plan_id=txn.get("plan_id"),
-        tier="coach" if txn.get("applied") else None,
+        tier=txn.get("plan_id") if applied else None,
     )
 
 
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
-    body = await request.body()
+    payload = await request.body()
     signature = request.headers.get("Stripe-Signature", "")
-    host_url = str(request.base_url).rstrip("/")
-    stripe_checkout = StripeCheckout(
-        api_key=STRIPE_API_KEY, webhook_url=f"{host_url}/api/webhook/stripe"
-    )
+
+    if not STRIPE_WEBHOOK_SECRET:
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        raise HTTPException(status_code=500, detail="Webhook not configured")
+
     try:
-        evt = await stripe_checkout.handle_webhook(body, signature)
+        event = stripe.Webhook.construct_event(
+            payload=payload,
+            sig_header=signature,
+            secret=STRIPE_WEBHOOK_SECRET,
+        )
+    except stripe.error.SignatureVerificationError as e:
+        logger.warning(f"Webhook signature verification failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid signature")
     except Exception as e:
-        logger.warning(f"Webhook verify failed: {e}")
-        raise HTTPException(status_code=400, detail="invalid webhook")
-    if evt.session_id:
-        await _apply_subscription_if_paid(evt.session_id)
-    return {"ok": True}
+        logger.warning(f"Webhook parsing failed: {e}")
+        raise HTTPException(status_code=400, detail="Invalid webhook")
+
+    event_type = event["type"]
+    obj = event["data"]["object"]
+    logger.info(f"Stripe webhook received: {event_type}")
+
+    # NB: `obj` is a stripe.StripeObject (dict-like) but its custom __getattr__
+    # makes `.get(...)` unreliable; use bracket-style access.
+    def _obj_id(o) -> Optional[str]:
+        try:
+            return o["id"]
+        except (KeyError, TypeError):
+            return None
+
+    if event_type in (
+        "checkout.session.completed",
+        "checkout.session.async_payment_succeeded",
+    ):
+        session_id = _obj_id(obj)
+        if session_id:
+            await _apply_subscription_if_paid(session_id)
+    elif event_type == "checkout.session.async_payment_failed":
+        session_id = _obj_id(obj)
+        if session_id:
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "failed", "status": "expired"}},
+            )
+
+    return {"ok": True, "type": event_type}
 
 
 async def _send_push_notification(to_token: str, title: str, body: str, data: dict | None = None):

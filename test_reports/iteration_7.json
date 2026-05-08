@@ -1,0 +1,44 @@
+{
+  "summary": "Stripe LIVE-key webhook signature verification + automatic tier upgrade verified GREEN. New /app/backend/tests/test_stripe_live_webhook.py (19 tests, 100% pass) signs payloads with HMAC-SHA256 against STRIPE_WEBHOOK_SECRET=whsec_dbOTqdehRItlzN4NdjAxiAIQP7v36nuG and asserts: (a) sk_live_/pk_live_/whsec_ env loaded, (b) POST /api/payments/checkout creates real cs_live_... sessions on api.stripe.com (Plus $9.99 + Coach $120) with payment_transactions row inserted, (c) webhook rejects missing & bogus Stripe-Signature with 400, (d) valid signed checkout.session.completed AND checkout.session.async_payment_succeeded → 200 + user tier upgraded to plan_id, subscription_status='active', subscription_expires_at ≈ now+30d, (e) replay is idempotent (expiry NOT extended a 2nd time), (f) GET /api/payments/status/{cs_live_...} no longer 500s when Stripe retrieve 404s. Full backend regression: 79 passed / 0 failed (excluding test_surfai_api.py which has a documented pre-existing free-quota test-ordering issue unchanged since iteration_5). Demo user restored to tier='free' post-run.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/webhook/stripe",
+        "issue": "FIXED during this iteration — handler used obj.get('id') on a stripe.StripeObject whose custom __getattr__ raises AttributeError for 'get' (KeyError 'get' inside _stripe_object.__getitem__). All checkout.session.completed and async_payment_succeeded events were 500-ing before signature was even processed downstream. Replaced with bracket-style _obj_id helper in /app/backend/server.py."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_stripe_live_webhook.py",
+    "/app/test_reports/pytest/stripe_live_webhook.xml",
+    "/app/test_reports/pytest/full_regression_v14.xml"
+  ],
+  "action_items": [
+    "Recommended: extract payment/webhook code from server.py (now ~1175 lines) into /app/backend/routers/payments.py to drop server.py below the 700-line guideline.",
+    "Optional hardening: in stripe_webhook(), explicitly catch stripe.error.SignatureVerificationError BEFORE the generic Exception so signature-related 400s don't get masked by the catch-all 'Invalid webhook' branch (currently fine because the SignatureVerificationError handler comes first, but a malformed timestamp header still falls through to the catch-all)."
+  ],
+  "critical_code_review_comments": [
+    "BUG (FIXED): obj.get('id') is unsafe on stripe.StripeObject — the dict-subclass overrides __getattr__ in a way that raises AttributeError when accessing the 'get' method. Use bracket access or the explicit attribute (e.g. obj['id'] or getattr(obj, 'id', None)).",
+    "_apply_subscription_if_paid correctly degrades when stripe.checkout.Session.retrieve throws (e.g. for synthetic ids in tests) — it falls back to txn.payment_status from the DB. This is the path that gets exercised by the webhook test.",
+    "Idempotency relies on the early-return when txn.payment_status=='paid' AND txn.applied. After the first apply, the 2nd webhook hit short-circuits without recomputing expiry. Verified by direct equality of subscription_expires_at across two replays.",
+    "Webhook signature scheme is the standard Stripe v1 (t=<ts>,v1=<hex(hmac_sha256(secret, f'{ts}.{body}'))>) — confirmed compatible with stripe.Webhook.construct_event using the live whsec_ secret in /app/backend/.env.",
+    "server.py is now 1180+ lines; split recommended."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (replaced obj.get('id') with bracket-access _obj_id helper inside POST /api/webhook/stripe)",
+    "/app/backend/tests/test_stripe_live_webhook.py (new — 19 tests, full Stripe live-key webhook + tier upgrade coverage)"
+  ],
+  "success_rate": {"backend": "100% (19/19 stripe webhook tests + 79/79 full regression excluding pre-existing test_surfai_api ordering issue)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Per-test fixtures seed payment_transactions with payment_status='paid' so the webhook's fallback DB path applies the tier upgrade. Demo user (user_demo_12345) is force-reset to tier='free', subscription_status=null, subscription_expires_at=null before AND after each tier-upgrade test (reset_demo_user fixture). Verified post-run via mongosh.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Stripe webhook live-key tests at /app/backend/tests/test_stripe_live_webhook.py. Helper _sign(payload, secret) crafts a valid t=…,v1=… header. Tests pre-seed payment_transactions with payment_status='paid' so when stripe.Session.retrieve fails for synthetic cs_live_test_… ids, the handler falls back to DB state and applies tier=plan_id. ALL 19 tests pass. Real LIVE Stripe API is hit twice per run (Plus + Coach checkout creation) — these create real Checkout Sessions on the live account but no charge happens until a card is paid. The /tmp/test_surf.mp4 sample required by 4 other test files was missing this iteration; restored from /app/backend/uploads/videos/user_demo_12345/ana_7b664e5f076c41.mp4. Demo user restored to free tier.",
+  "rca_of_issue": "RCA — webhook 500: stripe.StripeObject is a dict-subclass with a custom __getattr__ that proxies attribute access to dict-key lookup. When the handler called obj.get('id'), python first does normal attribute resolution which (for some stripe SDK versions including 15.1.0) routes through __getattr__ and tries self['get'] → KeyError 'get' → re-raised as AttributeError 'get'. The synthetic 'data.object' the test sent did not include a 'get' key, so it 500'd. Reproduction: send any valid signed checkout.session.completed event → 500. Mitigation: replaced obj.get('id') with a small _obj_id(o) helper that does try o['id'] / except (KeyError, TypeError) → None. After fix all 19 webhook tests + idempotency replay pass. RCA — payments/status 500: not actually 500 in current code; gracefully returns 200 with payment_status='initiated'/'unpaid' when stripe.Session.retrieve 404s — verified."
+}
