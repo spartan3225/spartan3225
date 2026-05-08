@@ -85,3 +85,14 @@ in test runs that Gemini 2.5 Pro outputs include these references.
 ## Test sessions
 - `demo_token_active` → free user `demo@surfai.test`
 - `demo_coach_token` → coach `demo.coach@surfai.test` (public profile)
+
+## Pricing Tiers (updated)
+- Free: $0 — 1 video LIFETIME (not per day)
+- Beginner: $5/mo — 1 video/day
+- Plus: $12/mo — 3 videos/day (was $9.99)
+- Intermediate: $20/mo — 6 videos/day
+- Advanced: $35/mo — 10 videos/day
+- Pro: $60/mo — 15 videos/day
+- Coach Elite: $120/mo — unlimited + coach directory
+
+Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses inline `price_data` so no manual Stripe Product/Price IDs are needed).
