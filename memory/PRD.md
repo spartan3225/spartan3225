@@ -1,83 +1,87 @@
-# SurfAI – AI Surfing Video Coach (v1.2)
+# SurfCoach23 – AI Surfing Video Coach (v1.3)
 
 ## Vision
-Mobile-first AI coach: surfers upload clips → Gemini 2.5 Pro analyses
-movement, mistakes, corrections, drills. Coaches monetise their expertise.
+Mobile-first AI surf coach. Surfers upload clips → Gemini 2.5 Pro delivers
+world-tour-grade technique analysis, modelled on the methodologies of
+Martin Dunn, Andy King, Carlos Burle, Brad Gerlach and the WSL judging
+criteria, referencing pros: Ramzi Boukhiam, Italo Ferreira, Gabriel
+Medina, Filipe Toledo, Kelly Slater.
 
-## Stack
-Expo Router · TypeScript · FastAPI · MongoDB · Gemini 2.5 Pro
-(emergentintegrations) · Stripe Checkout · Emergent Google OAuth ·
-Expo Push Notifications.
+## Brand
+- App name: **SurfCoach23**
+- Brand mark: cyan dot + `SURFCOACH · 23` wordmark
+- Login hero: dramatic surfing action photography (Ramzi Boukhiam
+  inspired)
+- Theme: dark performance-pro (cyan #00E5FF on near-black)
 
-## Tiers
-- **Free** $0 — 1 AI analysis per day
-- **Coach** $120/month — unlimited, deeper AI breakdown, public coach
-  profile, inbox of student-shared clips, comments thread
+## Tiers (3 plans)
+| Plan  | Price       | Daily quota | Notes |
+|-------|-------------|-------------|-------|
+| Free  | $0          | 1 / day     | Standard depth |
+| Plus  | $9.99 / mo  | 3 / day     | More analyses, browse coach directory |
+| Coach | $120 / mo   | unlimited   | Pro-tour deeper breakdown, public coach profile, inbox, comments |
 
-## Features delivered
-### v1.0
-- Login (Emergent Google), session token in AsyncStorage / localStorage
-- Dashboard, upload (gallery + camera), AI analysis with Gemini 2.5 Pro
-- Analysis detail with score, mistakes (severity + timestamps), corrections, tips, drills
-- Profile + stats
+Daily quota is enforced in `POST /api/analyses` (HTTP 402 on overage).
+Pricing & limits are server-defined — never trusted from frontend.
 
-### v1.1 (memberships)
-- Free vs Coach plans, daily quota enforcement (HTTP 402)
-- Stripe Checkout (server-defined amounts), `payment_transactions`, webhook
-- Coach profile editor, public coach directory, coach inbox
-- Share-with-coach + comments thread
+## Screens
+- `/` Login with Ramzi-inspired hero + Continue with Google
+- `/auth-callback`
+- `(tabs)/index` Sessions dashboard + **Pro Inspirations** carousel
+  (Ramzi · Italo · Medina · Toledo · Slater)
+- `(tabs)/upload` Pick / record / analyse
+- `(tabs)/profile` Tier badge, quota card, coach actions, manage plan
+- `/analysis/[id]` AI breakdown + share-with-coach + comments
+- `/paywall` Free + Plus + Coach cards, two upgrade buttons
+- `/payment-success` `/payment-cancel`
+- `/coaches` Public directory with search/specialty/location filters
+- `/coach/[id]` Public coach profile
+- `/coach-edit` Coach-only profile editor
+- `/coach-inbox` Coach-only shared-clips list
+- `/manage-plan` Coach-only cancel/resume/extend renewal
 
-### v1.2 (this release)
-- **Push notifications** — when a comment is added, the other party gets a
-  push via Expo (`/api/users/push-token` saves token; comments trigger
-  `_send_push_notification`)
-- **Manage Subscription screen** — coaches can cancel renewal (keeps
-  access until expiry), resume renewal, or extend by another month
-  (re-uses Stripe Checkout)
-- **Coach directory filters** — `q`, `location`, `specialty` query params
-  with case-insensitive regex matching, filter UI on `/coaches` screen
+## Backend API
+| Method | Path | |
+|--------|------|---|
+| GET    | /api/health | |
+| POST   | /api/auth/session | |
+| GET    | /api/auth/me | |
+| POST   | /api/auth/logout | |
+| PUT    | /api/users/push-token | |
+| GET    | /api/plans | 3 plans |
+| GET    | /api/analyses/quota | tier-aware |
+| POST   | /api/analyses | tier-aware enforcement |
+| GET    | /api/analyses | |
+| GET    | /api/analyses/{id} | |
+| GET    | /api/analyses/{id}/video?token=... | |
+| POST   | /api/analyses/{id}/share | |
+| GET/POST | /api/analyses/{id}/comments | + push notification |
+| POST   | /api/payments/checkout | plan_id ∈ {plus, coach} |
+| GET    | /api/payments/status/{sid} | applies tier=plan_id |
+| POST   | /api/payments/cancel-renewal | |
+| POST   | /api/payments/resume-renewal | |
+| POST   | /api/webhook/stripe | |
+| GET    | /api/coaches?q=&location=&specialty= | filtered directory |
+| GET    | /api/coaches/{user_id} | |
+| PUT    | /api/coach/profile | |
+| GET    | /api/coach/inbox | |
 
-## Backend API (full surface)
-| Method | Path | Notes |
-|--------|------|-------|
-| GET    | /api/health | liveness |
-| POST   | /api/auth/session | exchange Emergent session_id |
-| GET    | /api/auth/me | current user |
-| POST   | /api/auth/logout | revoke session |
-| PUT    | /api/users/push-token | save / clear Expo push token |
-| GET    | /api/plans | tiers |
-| GET    | /api/analyses/quota | tier + remaining/used_today |
-| POST   | /api/analyses | upload + analyse (free 1/day → 402) |
-| GET    | /api/analyses | list user's analyses |
-| GET    | /api/analyses/{id} | full analysis |
-| GET    | /api/analyses/{id}/video?token=... | stream original |
-| POST   | /api/analyses/{id}/share | share with a coach |
-| GET    | /api/analyses/{id}/comments | thread |
-| POST   | /api/analyses/{id}/comments | add comment + push |
-| POST   | /api/payments/checkout | new Stripe Checkout session |
-| GET    | /api/payments/status/{sid} | poll status, idempotently apply |
-| POST   | /api/payments/cancel-renewal | flag cancel_at_period_end |
-| POST   | /api/payments/resume-renewal | clear flag |
-| POST   | /api/webhook/stripe | webhook receiver |
-| GET    | /api/coaches?q&location&specialty | filtered directory |
-| GET    | /api/coaches/{user_id} | public coach profile |
-| PUT    | /api/coach/profile | edit (coach-only) |
-| GET    | /api/coach/inbox | shared clips (coach-only) |
+## AI Prompt
+Base prompt fuses Martin Dunn / Andy King / Carlos Burle / Brad Gerlach
+plus WSL judging criteria. Coach-tier prompt extra requires citing
+specific pros (Toledo / Medina / Italo / John John / Slater / Ramzi)
+in tips and applying judging-criteria scoring in the summary. Verified
+in test runs that Gemini 2.5 Pro outputs include these references.
 
-## Smart Business Enhancement
-**Two-sided marketplace**: free surfers fuel demand by sharing clips,
-paid coaches monetise via the directory + inbox + comments. Push
-notifications **close the loop** the moment a coach replies — driving
-return-visits and reinforcing the perceived value of paying $120/month.
+## Smart business engine
+- 3-tier funnel (Free → Plus at $9.99 → Coach at $120) with hard daily
+  caps drives upgrades without alienating Free users.
+- Coach Plan creates a **two-sided marketplace**: free/Plus surfers
+  share clips, paid Coaches monetise via the public directory + inbox +
+  comments.
+- Push notifications close the feedback loop the moment a coach
+  replies, reinforcing perceived Coach-plan value.
 
-## Test sessions (in mongo `test_database`)
+## Test sessions
 - `demo_token_active` → free user `demo@surfai.test`
-- `demo_coach_token` → public coach `demo.coach@surfai.test`
-
-## Backlog
-- Stripe webhook → auto-flip tier (currently auto-flip via polling is
-  blocked by emergentintegrations StripeObject metadata bug)
-- Pose-tracking overlay synced with mistake timestamps
-- Side-by-side session compare
-- Coach earnings dashboard
-- iOS / Android native push delivery testing on physical devices
+- `demo_coach_token` → coach `demo.coach@surfai.test` (public profile)
