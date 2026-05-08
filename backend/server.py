@@ -223,7 +223,7 @@ def _is_coach_active(user_doc: dict) -> bool:
 
 async def _refresh_tier_if_expired(user_doc: dict) -> dict:
     """Demote a user back to 'free' if subscription expired."""
-    if user_doc.get("tier") == "coach" and not _is_coach_active(user_doc):
+    if user_doc.get("tier") in {"coach", "plus"} and not _is_paid_active(user_doc):
         await db.users.update_one(
             {"user_id": user_doc["user_id"]},
             {"$set": {"tier": "free", "subscription_status": "expired"}},
@@ -231,6 +231,22 @@ async def _refresh_tier_if_expired(user_doc: dict) -> dict:
         user_doc["tier"] = "free"
         user_doc["subscription_status"] = "expired"
     return user_doc
+
+
+def _is_paid_active(user_doc: dict) -> bool:
+    if user_doc.get("tier") not in {"coach", "plus"}:
+        return False
+    exp = user_doc.get("subscription_expires_at")
+    if exp is None:
+        return False
+    if isinstance(exp, str):
+        try:
+            exp = datetime.fromisoformat(exp)
+        except Exception:
+            return False
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+    return exp > datetime.now(timezone.utc)
 
 
 async def get_current_user(authorization: Optional[str] = Header(None)) -> User:
@@ -457,8 +473,9 @@ async def analyse_video_with_gemini(
 # ---------------- Analysis routes ----------------
 @api_router.get("/analyses/quota")
 async def get_quota(user: User = Depends(get_current_user)):
-    if user.tier == "coach":
-        return {"tier": "coach", "remaining": -1, "limit": -1, "used_today": 0}
+    limit = TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT)
+    if limit == -1:
+        return {"tier": user.tier, "remaining": -1, "limit": -1, "used_today": 0}
     today_start = datetime.now(timezone.utc).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
@@ -466,9 +483,9 @@ async def get_quota(user: User = Depends(get_current_user)):
         {"user_id": user.user_id, "created_at": {"$gte": today_start}}
     )
     return {
-        "tier": "free",
-        "remaining": max(0, FREE_DAILY_LIMIT - used),
-        "limit": FREE_DAILY_LIMIT,
+        "tier": user.tier,
+        "remaining": max(0, limit - used),
+        "limit": limit,
         "used_today": used,
     }
 
@@ -507,18 +524,20 @@ async def create_analysis(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
 ):
-    # Enforce free-tier daily limit
-    if user.tier != "coach":
+    # Enforce daily limit by tier
+    limit = TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT)
+    if limit != -1:
         today_start = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
         used = await db.analyses.count_documents(
             {"user_id": user.user_id, "created_at": {"$gte": today_start}}
         )
-        if used >= FREE_DAILY_LIMIT:
+        if used >= limit:
+            tier_label = (user.tier or "free").capitalize()
             raise HTTPException(
                 status_code=402,
-                detail=f"Free plan limit of {FREE_DAILY_LIMIT} analysis per day reached. Upgrade to Coach for unlimited analyses.",
+                detail=f"{tier_label} plan limit of {limit} {'analyses' if limit != 1 else 'analysis'} per day reached. Upgrade for more.",
             )
 
     analysis_id = f"ana_{uuid.uuid4().hex[:14]}"
@@ -985,7 +1004,7 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
                 {"user_id": txn["user_id"]},
                 {
                     "$set": {
-                        "tier": "coach",
+                        "tier": plan_id,
                         "subscription_status": "active",
                         "subscription_expires_at": new_expiry,
                     }

@@ -1,0 +1,42 @@
+{
+  "summary": "v1.3 SurfCoach23 CRITICAL bug fixes verified GREEN end-to-end. New /app/backend/tests/test_v13_bugfixes.py covers all 3 bugs (quota for plus user, 3-upload Plus enforcement + 402 on 4th, _apply_subscription_if_paid sets tier=plan_id for both plus AND coach) — 5/5 PASS. Full backend regression: 71 passed / 3 skipped / 1 known pre-existing test-ordering failure (test_surfai_api::test_create_analysis_uploads_and_runs_gemini, free quota already used by earlier test in suite — same as iteration_5, NOT a v1.3 regression). Frontend paywall hero now correctly renders 'SURFCOACH · 23' (was 'SURF · COACH'); upgrade-plus-btn shows 'Get Plus – $9.99/mo' and upgrade-coach-btn shows 'Upgrade to Coach – $120/mo'. Demo user restored to tier='free' after run as required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/analyses (free user)",
+        "issue": "Pre-existing test-ordering issue (already documented in iteration_5): test_surfai_api::test_create_analysis_uploads_and_runs_gemini fails with 402 because earlier suite tests consume the free user's 1/day quota. Not a v1.3 regression — runs PASS when test is executed in isolation against a fresh free user."
+      },
+      {
+        "endpoint": "GET /api/payments/status/{session_id}",
+        "issue": "Pre-existing v1.2 limitation: Stripe lookup for fake session_ids returns 404, _apply_subscription_if_paid degrades gracefully using DB payment_status. Confirmed correct behaviour — applies tier=plan_id when txn.payment_status=='paid'."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v13_bugfixes.py",
+    "/app/test_reports/pytest/v13_bugfix_results.xml",
+    "/app/test_reports/pytest/regression_v13_bugfix.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is now ~1164 lines (PLANS + TIER_DAILY_LIMITS + _is_paid_active + _refresh_tier_if_expired + _apply_subscription_if_paid). Recommend extracting payments/subscription logic into routers/payments.py to keep server.py under 700 lines.",
+    "_apply_subscription_if_paid still references _is_coach_active(user_doc) on line 995 to extend an existing expiry — for a Plus user mid-cycle who upgrades to another plan, the helper should likely be _is_paid_active so plus expiry is also extended. Edge case, low priority.",
+    "Bug fix correctly implemented: get_quota uses TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT); create_analysis enforces same lookup with limit==-1 = unlimited; _apply_subscription_if_paid sets tier=plan_id (not hardcoded 'coach'); _refresh_tier_if_expired now demotes both 'coach' and 'plus' via _is_paid_active. All 4 fixes are clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_v13_bugfixes.py (new — 5 tests covering all 3 critical bug fixes)"
+  ],
+  "success_rate": {"backend": "100% on bug fixes (5/5) + 71/72 full regression (1 pre-existing free quota ordering issue)", "frontend": "100% on paywall brand label"},
+  "seed_data_creation": "Demo user temporarily promoted to plus tier inside fixtures, then restored to tier='free', subscription_status=null, subscription_expires_at=null. Verified post-run via mongosh. Analyses + test payment_transactions cleaned up.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v1.3 critical bug fix tests at /app/backend/tests/test_v13_bugfixes.py — 5 tests, all green. Verifies: (1) GET /api/analyses/quota returns {tier:'plus', limit:3, remaining:3, used_today:0} for plus user; (2) Plus user can have 3 analyses then POST /api/analyses returns 402 on 4th with detail mentioning Plus + 3; (3) faked-paid plus payment_transactions row → user.tier='plus' (not 'coach') after GET /api/payments/status/{session_id}; (4) faked-paid coach row still sets tier='coach' (regression). Demo user always restored to tier='free' via fixture teardown. Frontend paywall hero confirmed 'SURFCOACH · 23'. Pre-existing free-quota ordering failure in test_surfai_api remains, unchanged from iteration_5.",
+  "rca_of_issue": "All 3 reported bugs are RESOLVED. RCA: (BUG1) get_quota previously hardcoded coach-only branch and fell through to FREE_DAILY_LIMIT for any non-coach tier — now uses TIER_DAILY_LIMITS.get(user.tier, FREE_DAILY_LIMIT). (BUG1b) create_analysis enforcement same root cause, same fix. (BUG2) _apply_subscription_if_paid hardcoded tier='coach' on payment_paid — now sets tier=plan_id (so plus checkout activates plus tier). All verified by direct DB-state assertions in test_v13_bugfixes.py."
+}

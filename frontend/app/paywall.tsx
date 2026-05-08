@@ -86,7 +86,7 @@ export default function PaywallScreen() {
         <View style={styles.hero}>
           <View style={styles.brandRow}>
             <View style={styles.brandDot} />
-            <Text style={styles.brandLabel}>SURF · COACH</Text>
+            <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
           </View>
           <Text style={styles.heading}>GO{"\n"}UNLIMITED.</Text>
           <Text style={styles.sub}>
