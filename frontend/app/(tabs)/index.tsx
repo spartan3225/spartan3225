@@ -220,8 +220,8 @@ export default function DashboardScreen() {
               <Text style={styles.ctaText}>New Analysis</Text>
             </TouchableOpacity>
 
-            {/* Pro Inspirations carousel */}
-            <Text style={styles.sectionLabel}>Trained on the Pros</Text>
+            {/* Action surfing gallery (pure visuals, no captions) */}
+            <Text style={styles.sectionLabel}>Surf Inspiration</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -231,18 +231,11 @@ export default function DashboardScreen() {
             >
               {PRO_INSPIRATIONS.map((p) => (
                 <View
-                  key={p.name}
+                  key={p.id}
                   style={styles.proCard}
-                  testID={`pro-${p.name.replace(/\s+/g, "-").toLowerCase()}`}
+                  testID={`shot-${p.id}`}
                 >
                   <Image source={{ uri: p.image }} style={styles.proImage} />
-                  <View style={styles.proOverlay} />
-                  <View style={styles.proLabels}>
-                    <Text style={styles.proTag}>{p.tag}</Text>
-                    <Text style={styles.proName}>
-                      {p.name.toUpperCase()}
-                    </Text>
-                  </View>
                 </View>
               ))}
             </ScrollView>
@@ -437,39 +430,12 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   proCard: {
-    width: 200,
-    height: 110,
+    width: 220,
+    height: 130,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
   proImage: { width: "100%", height: "100%", resizeMode: "cover" },
-  proOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(10,10,10,0.45)",
-  },
-  proLabels: {
-    position: "absolute",
-    left: 12,
-    bottom: 10,
-    right: 12,
-  },
-  proTag: {
-    color: colors.primary,
-    fontSize: 9,
-    letterSpacing: 1.8,
-    fontWeight: "800",
-    marginBottom: 2,
-  },
-  proName: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    letterSpacing: 0.5,
-    fontWeight: "900",
-  },
 });

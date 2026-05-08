@@ -106,13 +106,9 @@ export default function LoginScreen() {
           MASTER{"\n"}EVERY{"\n"}WAVE.
         </Text>
         <Text style={styles.subtitle}>
-          Upload a clip. Get instant pro-tour technique analysis trained on the
-          movement of Ramzi Boukhiam, Italo Ferreira, Gabriel Medina & more.
+          Upload a clip. Get instant pro-tour technique analysis — score,
+          mistakes, corrections and drills, frame by frame.
         </Text>
-        <View style={styles.heroFootRow}>
-          <Text style={styles.heroFootLabel}>INSPIRED BY</Text>
-          <Text style={styles.heroFootName}>RAMZI BOUKHIAM</Text>
-        </View>
 
         <View style={styles.statsRow}>
           <View style={styles.statBox}>

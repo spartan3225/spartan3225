@@ -1,40 +1,39 @@
-// Action-surfing photography (Unsplash, free license) tagged with the pro
-// surfer who inspires that maneuver / style. We DO NOT use named portraits.
-export type ProInspiration = {
-  name: string;
-  tag: string;
+// Pure action-surfing photography. NO names, NO captions, NO text labels.
+// Showcasing barrels, snaps, carves and aerials.
+export type SurfShot = {
+  id: string;
   image: string;
 };
 
-export const PRO_INSPIRATIONS: ProInspiration[] = [
+export const PRO_INSPIRATIONS: SurfShot[] = [
   {
-    name: "Ramzi Boukhiam",
-    tag: "POWER · RAIL",
+    id: "barrel",
     image:
-      "https://images.unsplash.com/photo-1502933691298-84fc14542831?w=900&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1502933691298-84fc14542831?w=1200&q=85&auto=format&fit=crop",
   },
   {
-    name: "Italo Ferreira",
-    tag: "AERIALS · EXPLOSIVE",
+    id: "aerial",
     image:
-      "https://images.unsplash.com/photo-1530870110042-98b2cb110834?w=900&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1530870110042-98b2cb110834?w=1200&q=85&auto=format&fit=crop",
   },
   {
-    name: "Gabriel Medina",
-    tag: "BARREL · TIMING",
+    id: "carve",
     image:
-      "https://images.unsplash.com/photo-1455729552865-3658a5d39692?w=900&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1455729552865-3658a5d39692?w=1200&q=85&auto=format&fit=crop",
   },
   {
-    name: "Filipe Toledo",
-    tag: "AIR · ROTATION",
+    id: "drop",
     image:
-      "https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=900&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=1200&q=85&auto=format&fit=crop",
   },
   {
-    name: "Kelly Slater",
-    tag: "LINE · FLOW",
+    id: "snap",
     image:
-      "https://images.unsplash.com/photo-1531722569936-825d3dd91b15?w=900&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1531722569936-825d3dd91b15?w=1200&q=85&auto=format&fit=crop",
+  },
+  {
+    id: "tube",
+    image:
+      "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=1200&q=85&auto=format&fit=crop",
   },
 ];
