@@ -1,30 +1,280 @@
-import { Text, View, StyleSheet, Image } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  Platform,
+} from "react-native";
+import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { Ionicons } from "@expo/vector-icons";
+import { colors, spacing } from "../src/theme";
+import { fetchMe, exchangeSessionId } from "../src/api";
 
-const EXPO_PUBLIC_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const HERO_IMAGE =
+  "https://static.prod-images.emergentagent.com/jobs/bade60e2-d6bb-40f2-9843-b258282a5a76/images/742e6d4b2cb10a6cef4e0bbd3eb96e3b16c6fe7bd5bb48059af9f3000f9d4d96.png";
 
-export default function Index() {
-  console.log(EXPO_PUBLIC_BACKEND_URL, "EXPO_PUBLIC_BACKEND_URL");
+export default function LoginScreen() {
+  const router = useRouter();
+  const [checking, setChecking] = useState(true);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      // If returning from OAuth callback (web), let the callback page handle it
+      if (
+        Platform.OS === "web" &&
+        typeof window !== "undefined" &&
+        window.location.hash &&
+        window.location.hash.includes("session_id=")
+      ) {
+        router.replace("/auth-callback");
+        return;
+      }
+      const me = await fetchMe();
+      if (me) {
+        router.replace("/(tabs)");
+      } else {
+        setChecking(false);
+      }
+    })();
+  }, [router]);
+
+  const onSignIn = async () => {
+    setError(null);
+    setLoggingIn(true);
+    try {
+      // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
+      if (Platform.OS === "web") {
+        const redirectUrl = window.location.origin + "/auth-callback";
+        window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
+          redirectUrl
+        )}`;
+        return;
+      }
+      // Native flow
+      const redirectUrl =
+        (process.env.EXPO_PUBLIC_BACKEND_URL as string) + "/auth-callback";
+      const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
+        redirectUrl
+      )}`;
+      const result = await WebBrowser.openAuthSessionAsync(
+        authUrl,
+        redirectUrl
+      );
+      if (result.type === "success" && result.url) {
+        const m = result.url.match(/session_id=([^&#]+)/);
+        if (m && m[1]) {
+          await exchangeSessionId(decodeURIComponent(m[1]));
+          router.replace("/(tabs)");
+          return;
+        }
+      }
+      setError("Sign-in cancelled");
+    } catch (e: any) {
+      setError(e?.message || "Sign-in failed");
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  if (checking) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
-      <Image
-        source={require("../assets/images/app-image.png")}
-        style={styles.image}
-      />
+    <View style={styles.container} testID="login-screen">
+      <Image source={{ uri: HERO_IMAGE }} style={styles.hero} />
+      <View style={styles.overlay} />
+
+      <View style={styles.content}>
+        <View style={styles.brandRow}>
+          <View style={styles.brandDot} />
+          <Text style={styles.brandLabel}>SURF · AI</Text>
+        </View>
+
+        <Text style={styles.title} testID="login-title">
+          MASTER{"\n"}EVERY{"\n"}WAVE.
+        </Text>
+        <Text style={styles.subtitle}>
+          Upload a clip. Get instant frame-by-frame technique analysis from an
+          AI surf coach.
+        </Text>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>AI</Text>
+            <Text style={styles.statLabel}>Coach</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>4K</Text>
+            <Text style={styles.statLabel}>Video</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statBox}>
+            <Text style={styles.statValue}>30s</Text>
+            <Text style={styles.statLabel}>Insights</Text>
+          </View>
+        </View>
+
+        {error ? (
+          <Text style={styles.error} testID="login-error">
+            {error}
+          </Text>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.signInBtn}
+          onPress={onSignIn}
+          activeOpacity={0.85}
+          disabled={loggingIn}
+          testID="login-google-btn"
+        >
+          {loggingIn ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <>
+              <Ionicons
+                name="logo-google"
+                size={18}
+                color="#000"
+                style={{ marginRight: 10 }}
+              />
+              <Text style={styles.signInText}>Continue with Google</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.legal}>
+          Your video clips stay private to your account.
+        </Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1, backgroundColor: colors.background },
+  center: { alignItems: "center", justifyContent: "center" },
+  hero: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: "65%",
+    resizeMode: "cover",
+    opacity: 0.85,
+  },
+  overlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(10,10,10,0.55)",
+  },
+  content: {
     flex: 1,
-    backgroundColor: "#0c0c0c",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xxl + spacing.lg,
+    paddingBottom: spacing.xl,
+    justifyContent: "flex-end",
+  },
+  brandRow: {
+    position: "absolute",
+    top: spacing.xxl + spacing.md,
+    left: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  brandDot: {
+    width: 10,
+    height: 10,
+    backgroundColor: colors.primary,
+  },
+  brandLabel: {
+    color: colors.primary,
+    letterSpacing: 4,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 56,
+    lineHeight: 56,
+    fontWeight: "900",
+    letterSpacing: -2,
+    textTransform: "uppercase",
+    marginBottom: spacing.md,
+  },
+  subtitle: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: spacing.lg,
+    maxWidth: 360,
+  },
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
+  },
+  statBox: { flex: 1, alignItems: "flex-start" },
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.border,
+  },
+  statValue: {
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: -1,
+  },
+  statLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginTop: 2,
+  },
+  signInBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    borderRadius: 4,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
   },
-  image: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
+  signInText: {
+    color: "#000",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  legal: {
+    color: colors.textMuted,
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: spacing.md,
+  },
+  error: {
+    color: colors.error,
+    marginBottom: spacing.sm,
+    fontSize: 13,
   },
 });
