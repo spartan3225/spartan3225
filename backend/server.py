@@ -1082,17 +1082,31 @@ async def stripe_webhook(request: Request):
         logger.warning(f"Webhook parsing failed: {e}")
         raise HTTPException(status_code=400, detail="Invalid webhook")
 
-    event_type = event["type"]
-    obj = event["data"]["object"]
+    try:
+        event_type = event["type"]
+        obj = event["data"]["object"]
+    except Exception:
+        # Newer stripe SDK Event objects expose attrs not items
+        event_type = getattr(event, "type", None)
+        data = getattr(event, "data", None)
+        obj = getattr(data, "object", None) if data is not None else None
+    if not event_type or obj is None:
+        logger.warning("Webhook event missing type/object")
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
     logger.info(f"Stripe webhook received: {event_type}")
 
     # NB: `obj` is a stripe.StripeObject (dict-like) but its custom __getattr__
     # makes `.get(...)` unreliable; use bracket-style access.
     def _obj_id(o) -> Optional[str]:
-        try:
-            return o["id"]
-        except (KeyError, TypeError):
+        if o is None:
             return None
+        try:
+            v = o["id"]
+            if v:
+                return v
+        except (KeyError, TypeError):
+            pass
+        return getattr(o, "id", None)
 
     if event_type in (
         "checkout.session.completed",

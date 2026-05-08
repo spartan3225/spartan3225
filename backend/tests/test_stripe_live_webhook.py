@@ -155,8 +155,8 @@ class TestStripeEnvLoaded:
 
     def test_webhook_secret_present(self):
         assert STRIPE_WEBHOOK_SECRET.startswith("whsec_")
-        # Specific value the main agent committed (no secret leak — already in repo .env)
-        assert STRIPE_WEBHOOK_SECRET == "whsec_dbOTqdehRItlzN4NdjAxiAIQP7v36nuG"
+        # Validate it matches the value loaded from .env (rotated by user)
+        assert len(STRIPE_WEBHOOK_SECRET) > 20
 
 
 # --------------------------------------------------------------------------
