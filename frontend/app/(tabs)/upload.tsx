@@ -101,6 +101,12 @@ export default function UploadScreen() {
       );
       router.replace(`/analysis/${result.analysis_id}` as any);
     } catch (e: any) {
+      const m = String(e?.message || "");
+      if (m.includes("402")) {
+        showError("Free plan limit reached. Upgrade to Coach for unlimited analyses.");
+        router.push("/paywall" as any);
+        return;
+      }
       showError(e?.message || "Upload failed");
     } finally {
       setSubmitting(false);

@@ -52,6 +52,13 @@ export type User = {
   name: string;
   picture?: string | null;
   created_at: string;
+  tier?: "free" | "coach" | string;
+  subscription_status?: string | null;
+  subscription_expires_at?: string | null;
+  coach_bio?: string | null;
+  coach_specialty?: string | null;
+  coach_location?: string | null;
+  coach_public?: boolean;
 };
 
 export type AnalysisListItem = {
@@ -147,4 +154,116 @@ export function getVideoStreamUrl(analysisId: string, token: string) {
   return `${API_URL}/analyses/${analysisId}/video?token=${encodeURIComponent(
     token
   )}`;
+}
+
+// ---- Quotas, plans, payments ----
+export type Quota = {
+  tier: string;
+  remaining: number;
+  limit: number;
+  used_today: number;
+};
+
+export async function getQuota(): Promise<Quota> {
+  return apiFetch<Quota>("/analyses/quota");
+}
+
+export type Plan = {
+  plan_id: string;
+  name: string;
+  amount: number;
+  currency: string;
+  features: string[];
+  interval?: string;
+};
+
+export async function getPlans(): Promise<{
+  plans: Plan[];
+  free_daily_limit: number;
+}> {
+  const res = await fetch(`${API_URL}/plans`);
+  return res.json();
+}
+
+export async function createCheckout(planId: string, originUrl: string) {
+  return apiFetch<{ url: string; session_id: string }>(
+    "/payments/checkout",
+    {
+      method: "POST",
+      body: JSON.stringify({ plan_id: planId, origin_url: originUrl }),
+    }
+  );
+}
+
+export async function getPaymentStatus(sessionId: string) {
+  return apiFetch<{
+    session_id: string;
+    status: string;
+    payment_status: string;
+    plan_id?: string;
+    tier?: string | null;
+  }>(`/payments/status/${sessionId}`);
+}
+
+// ---- Coaches ----
+export type CoachListItem = {
+  user_id: string;
+  name: string;
+  picture?: string | null;
+  coach_bio?: string | null;
+  coach_specialty?: string | null;
+  coach_location?: string | null;
+};
+
+export async function listCoaches(): Promise<CoachListItem[]> {
+  const res = await fetch(`${API_URL}/coaches`);
+  return res.json();
+}
+
+export async function updateCoachProfile(payload: {
+  bio?: string;
+  specialty?: string;
+  location?: string;
+  public?: boolean;
+}) {
+  return apiFetch<User>("/coach/profile", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function coachInbox(): Promise<AnalysisListItem[]> {
+  return apiFetch<AnalysisListItem[]>("/coach/inbox");
+}
+
+// ---- Sharing & Comments ----
+export async function shareWithCoach(analysisId: string, coachUserId: string) {
+  return apiFetch(`/analyses/${analysisId}/share`, {
+    method: "POST",
+    body: JSON.stringify({ coach_user_id: coachUserId }),
+  });
+}
+
+export type AnalysisComment = {
+  comment_id: string;
+  analysis_id: string;
+  author_id: string;
+  author_name: string;
+  author_picture?: string | null;
+  is_coach: boolean;
+  text: string;
+  created_at: string;
+};
+
+export async function listComments(
+  analysisId: string
+): Promise<AnalysisComment[]> {
+  return apiFetch<AnalysisComment[]>(`/analyses/${analysisId}/comments`);
+}
+
+export async function addComment(analysisId: string, text: string) {
+  return apiFetch<AnalysisComment>(`/analyses/${analysisId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
 }

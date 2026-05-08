@@ -20,11 +20,15 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="analysis/[id]"
-            options={{
-              animation: "slide_from_bottom",
-              presentation: "card",
-            }}
+            options={{ animation: "slide_from_bottom" }}
           />
+          <Stack.Screen name="paywall" options={{ animation: "slide_from_bottom" }} />
+          <Stack.Screen name="payment-success" />
+          <Stack.Screen name="payment-cancel" />
+          <Stack.Screen name="coaches" />
+          <Stack.Screen name="coach/[id]" />
+          <Stack.Screen name="coach-edit" />
+          <Stack.Screen name="coach-inbox" />
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>

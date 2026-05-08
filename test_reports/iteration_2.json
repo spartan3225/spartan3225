@@ -1,0 +1,52 @@
+{
+  "summary": "Tested SurfAI v2 (memberships, coach features, Stripe). Backend: 21/23 pytest tests passed; 2 failures both return HTTP 500 (coach deep-analysis JSON parsing + Stripe payment status retrieval). Frontend: all 7 user flows passed including paywall ($120), coach badge, inbox/edit testIDs, coaches directory, coach detail, and coach-edit save.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/analyses (coach token)",
+        "issue": "500 ValidationError. Gemini's deeper coach prompt returns drills (and sometimes strengths/tips/corrections) as dicts e.g. {'title':'Video Curation','detail':'Pick a good clip...'} but AnalysisOut declares List[str]. Pydantic rejects the response. Need to either (a) coerce dict items to a 'title — detail' string before save, or (b) widen the schema to accept structured drill objects, or (c) tighten the system prompt to enforce string arrays. Reproduce: POST /api/analyses with Authorization: Bearer demo_coach_token + sample-5s.mp4. See /var/log/supervisor/backend.err.log for full traceback.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "GET /api/payments/status/{session_id}",
+        "issue": "500 CheckoutError from emergentintegrations library: 'CheckoutStatusResponse.metadata - Input should be a valid dictionary [type=dict_type, input_value=<StripeObject ...>]'. The library's pydantic model rejects Stripe SDK's StripeObject for the `metadata` field. POST /payments/checkout itself works (200, real cs_test_... URL stored in payment_transactions with payment_status='initiated'), but any subsequent /payments/status/{id} call crashes during get_checkout_status -> after-payment activation flow is therefore broken. Need to web_search for emergentintegrations Stripe metadata fix or wrap the call to coerce metadata to dict before model validation.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/coach-edit", "issues": ["Pressing the back chevron after a fresh deep-link triggers RN warning 'GO_BACK was not handled by any navigator' — minor; consider router.replace('/(tabs)/profile') on save instead of router.back()."]}
+    ],
+    "react_native_issues": [
+      {"component": "Image (multiple screens)", "issue": "Console warning: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' Non-blocking but should be migrated."},
+      {"component": "View/Pressable", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.' Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_membership_coach_stripe.py",
+    "/app/test_reports/pytest/membership_results.xml"
+  ],
+  "action_items": [
+    "Fix coach-tier /api/analyses 500: post-process Gemini output so list fields (drills, mistakes inner detail, strengths, tips, corrections) are always List[str]. Easiest: in create_analysis, map each non-str item to f\"{i.get('title','')} — {i.get('detail','')}\".strip(' —') before the DB update.",
+    "Fix /api/payments/status 500: known compatibility issue between emergentintegrations CheckoutStatusResponse pydantic model and Stripe SDK's StripeObject metadata. Use web_search for the latest fix, or monkey-patch get_checkout_status to convert response.metadata via dict(response.metadata) before instantiating CheckoutStatusResponse. Without this fix, Coach upgrade can NEVER be applied to a user even after successful payment.",
+    "Optional: replace router.back() with router.replace('/(tabs)/profile') in coach-edit.tsx after save so deep-link entry doesn't fail the GO_BACK action."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 948 lines — recommend splitting into routers/ (auth, analyses, coach, payments) when convenient.",
+    "_apply_subscription_if_paid is called inside payment_status — when get_checkout_status throws, the entire HTTP request fails. Wrap in try/except and still return current DB state so the frontend payment-success page can degrade gracefully.",
+    "Gemini deep-analysis prompt promises strings but the model returns objects. Either constrain the prompt with explicit 'each drill MUST be a single plain string sentence' or accept structured types in the schema."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_membership_coach_stripe.py (new)"
+  ],
+  "success_rate": {"backend": "91%", "frontend": "100%"},
+  "seed_data_creation": "Re-seeded users + sessions via mongosh snippet from test_credentials.md. Cleared analyses/comments/transactions for both demo users at start of run.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "After fixes, re-run `pytest backend/tests/test_membership_coach_stripe.py -v`. Expect all 23 to pass. Re-seed beforehand: see /app/memory/test_credentials.md (also delete db.analyses for user_demo_12345 + user_coach_67890 to reset quota). For Stripe status retest, create a fresh checkout (POST /payments/checkout) then immediately GET /payments/status/{session_id} — should return 200 with payment_status ∈ {initiated, unpaid} and tier ∈ {null, 'free'}.",
+  "rca_of_issue": "Bug 1 RCA: SYSTEM_PROMPT_COACH_EXTRA asks for '5+ drills (mix of dry-land, balance-board and in-water)'. Gemini sometimes interprets the higher complexity by emitting nested objects. The base schema documented in SYSTEM_PROMPT_BASE shows drills as plain string array (\"drills\": [\"<drill>\", \"...\"]) but the model deviates. Mitigation: coerce in code before persisting (defensive) AND tighten prompt with explicit type instruction. Bug 2 RCA: emergentintegrations.payments.stripe.checkout.get_checkout_status constructs CheckoutStatusResponse(metadata=session.metadata) but Stripe Python SDK returns metadata as StripeObject (subclass of dict but pydantic v2 rejects without arbitrary_types_allowed). Library bug. Mitigation: pre-coerce by calling dict(stripe_session.metadata) in a wrapper, or pin a fixed version of emergentintegrations after web_search. Until fixed, Coach upgrade cannot complete end-to-end."
+}

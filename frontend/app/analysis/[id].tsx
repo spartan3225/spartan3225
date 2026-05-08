@@ -6,6 +6,8 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  TextInput,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -13,9 +15,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
 import {
   Analysis,
+  AnalysisComment,
+  addComment,
+  fetchMe,
   getAnalysis,
   getToken,
   getVideoStreamUrl,
+  listComments,
+  User,
 } from "../../src/api";
 import { colors, scoreColor, severityColor, spacing } from "../../src/theme";
 
@@ -23,17 +30,30 @@ export default function AnalysisDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [data, setData] = useState<Analysis | null>(null);
+  const [me, setMe] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [comments, setComments] = useState<AnalysisComment[]>([]);
+  const [draft, setDraft] = useState("");
+  const [posting, setPosting] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         if (!id) return;
-        const [d, t] = await Promise.all([getAnalysis(id), getToken()]);
+        const [d, t, u] = await Promise.all([
+          getAnalysis(id),
+          getToken(),
+          fetchMe(),
+        ]);
         setData(d);
+        setMe(u);
         if (t) setVideoUrl(getVideoStreamUrl(d.analysis_id, t));
+        try {
+          const c = await listComments(id);
+          setComments(c);
+        } catch {}
       } catch (e: any) {
         setError(e?.message || "Failed to load");
       } finally {
@@ -218,7 +238,24 @@ export default function AnalysisDetail() {
           </Section>
         )}
 
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: spacing.sm }}>
+          {data && me && data.user_id === me.user_id ? (
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              onPress={() =>
+                router.push(`/coaches?share_analysis_id=${data.analysis_id}` as any)
+              }
+              testID="share-with-coach-btn"
+            >
+              <Ionicons name="share-social-outline" size={16} color={colors.primary} />
+              <Text style={styles.secondaryBtnText}>
+                {data.shared_with_coach_id
+                  ? "Share with Another Coach"
+                  : "Share with a Coach"}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => router.replace("/(tabs)/upload")}
@@ -227,6 +264,88 @@ export default function AnalysisDetail() {
             <Ionicons name="refresh" size={16} color="#000" />
             <Text style={styles.primaryBtnText}>Analyse Another Clip</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Comments */}
+        <View style={styles.section} testID="comments-section">
+          <Text style={styles.sectionTitle}>COMMENTS</Text>
+          {comments.length === 0 ? (
+            <Text style={styles.emptyComments}>
+              No comments yet. {me?.tier === "coach" ? "Leave the first one." : "Share with a coach to get feedback."}
+            </Text>
+          ) : (
+            comments.map((c) => (
+              <View key={c.comment_id} style={styles.commentRow}>
+                {c.author_picture ? (
+                  <Image
+                    source={{ uri: c.author_picture }}
+                    style={styles.commentAvatar}
+                  />
+                ) : (
+                  <View
+                    style={[styles.commentAvatar, styles.commentAvatarFallback]}
+                  >
+                    <Ionicons
+                      name="person"
+                      size={14}
+                      color={colors.textSecondary}
+                    />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <View style={styles.commentHead}>
+                    <Text style={styles.commentName}>{c.author_name}</Text>
+                    {c.is_coach && (
+                      <View style={styles.coachPill}>
+                        <Text style={styles.coachPillText}>COACH</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.commentText}>{c.text}</Text>
+                </View>
+              </View>
+            ))
+          )}
+
+          {data && me && (data.user_id === me.user_id || data.shared_with_coach_id === me.user_id) ? (
+            <View style={styles.commentInputRow}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={
+                  me.tier === "coach"
+                    ? "Leave coaching feedback..."
+                    : "Reply to your coach..."
+                }
+                placeholderTextColor={colors.textMuted}
+                style={styles.commentInput}
+                multiline
+                maxLength={600}
+                testID="comment-input"
+              />
+              <TouchableOpacity
+                style={[styles.commentSend, (!draft.trim() || posting) && { opacity: 0.4 }]}
+                disabled={!draft.trim() || posting}
+                onPress={async () => {
+                  if (!data || !draft.trim()) return;
+                  setPosting(true);
+                  try {
+                    const c = await addComment(data.analysis_id, draft.trim());
+                    setComments((prev) => [...prev, c]);
+                    setDraft("");
+                  } catch {}
+                  setPosting(false);
+                }}
+                testID="comment-send-btn"
+              >
+                {posting ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Ionicons name="send" size={16} color="#000" />
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -427,6 +546,92 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  secondaryBtnText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  emptyComments: {
+    color: colors.textMuted,
+    fontSize: 13,
+    paddingVertical: spacing.sm,
+  },
+  commentRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  commentAvatar: { width: 32, height: 32, borderRadius: 4 },
+  commentAvatarFallback: {
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  commentHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
+  commentName: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  coachPill: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  coachPillText: {
+    color: "#000",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  commentText: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  commentInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.textPrimary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    fontSize: 13,
+    minHeight: 44,
+    maxHeight: 120,
+  },
+  commentSend: {
+    backgroundColor: colors.primary,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   errorText: {
     color: colors.error,
