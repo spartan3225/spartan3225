@@ -14,9 +14,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing } from "../src/theme";
 import { fetchMe, exchangeSessionId } from "../src/api";
 
-// Hero: dramatic surf-action photograph in the spirit of Ramzi Boukhiam
+// Hero: dramatic full-body action surfing photograph
 const HERO_IMAGE =
-  "https://images.unsplash.com/photo-1502933691298-84fc14542831?w=1400&q=80&auto=format&fit=crop";
+  "https://images.unsplash.com/photo-1530870110042-98b2cb110834?w=1400&q=85&auto=format&fit=crop";
 
 export default function LoginScreen() {
   const router = useRouter();

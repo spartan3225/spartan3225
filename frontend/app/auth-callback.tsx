@@ -40,7 +40,8 @@ export default function AuthCallback() {
           return;
         }
         await exchangeSessionId(sessionId);
-        router.replace("/(tabs)");
+        // Send new sign-ins to plans first; X closes to dashboard.
+        router.replace("/paywall");
       } catch (e: any) {
         setError(e?.message || "Auth failed");
         setTimeout(() => router.replace("/"), 1800);

@@ -76,11 +76,19 @@ export default function PaywallScreen() {
     <SafeAreaView style={styles.container} edges={["top"]} testID="paywall-screen">
       <ScrollView contentContainerStyle={{ paddingBottom: 64 }}>
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} testID="paywall-close-btn">
+          <TouchableOpacity
+            onPress={() => router.replace("/(tabs)")}
+            testID="paywall-close-btn"
+          >
             <Ionicons name="close" size={24} color={colors.textPrimary} />
           </TouchableOpacity>
           <Text style={styles.topTitle}>UPGRADE</Text>
-          <View style={{ width: 24 }} />
+          <TouchableOpacity
+            onPress={() => router.replace("/(tabs)")}
+            testID="paywall-skip-btn"
+          >
+            <Text style={styles.skipText}>Skip</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.hero}>
@@ -237,6 +245,13 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     fontSize: 11,
     fontWeight: "800",
+  },
+  skipText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
   hero: { padding: spacing.lg },
   brandRow: {
