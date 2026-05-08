@@ -1,77 +1,83 @@
-# SurfAI – AI Surfing Video Coach (v1.1 – Memberships + Stripe)
+# SurfAI – AI Surfing Video Coach (v1.2)
 
 ## Vision
-AI-powered surf coach mobile app: surfers upload a clip and get instant
-frame-by-frame technique feedback — score, mistakes, corrections, drills.
+Mobile-first AI coach: surfers upload clips → Gemini 2.5 Pro analyses
+movement, mistakes, corrections, drills. Coaches monetise their expertise.
 
 ## Stack
-- Expo Router (React Native) + TypeScript
-- FastAPI + MongoDB (Motor)
-- AI: Gemini 2.5 Pro via `emergentintegrations` (Emergent Universal LLM key)
-- Auth: Emergent-managed Google OAuth → Bearer token in AsyncStorage
-- Payments: Stripe Checkout via `emergentintegrations.payments.stripe.checkout`
+Expo Router · TypeScript · FastAPI · MongoDB · Gemini 2.5 Pro
+(emergentintegrations) · Stripe Checkout · Emergent Google OAuth ·
+Expo Push Notifications.
 
-## Membership tiers
-| Plan  | Price       | Features                                                                                        |
-|-------|-------------|------------------------------------------------------------------------------------------------|
-| Free  | $0          | 1 AI video analysis / day, standard depth, history                                             |
-| Coach | $120 / month| Unlimited analyses, **deeper** AI breakdown, public coach profile, inbox for student clips, comments |
+## Tiers
+- **Free** $0 — 1 AI analysis per day
+- **Coach** $120/month — unlimited, deeper AI breakdown, public coach
+  profile, inbox of student-shared clips, comments thread
 
-Daily quota is enforced in `POST /api/analyses` (returns 402 to free users
-who exceed limit).
+## Features delivered
+### v1.0
+- Login (Emergent Google), session token in AsyncStorage / localStorage
+- Dashboard, upload (gallery + camera), AI analysis with Gemini 2.5 Pro
+- Analysis detail with score, mistakes (severity + timestamps), corrections, tips, drills
+- Profile + stats
 
-## Screens
-- `/` Login
-- `/auth-callback`
-- `(tabs)/index` Sessions dashboard
-- `(tabs)/upload` Pick / record / analyse
-- `(tabs)/profile` User card, tier badge, quota, coach actions, logout
-- `/analysis/[id]` AI breakdown + Share-with-coach + comments thread
-- `/paywall` Compare Free vs Coach, start Stripe Checkout
-- `/payment-success` Polls `/api/payments/status/{id}` and confirms upgrade
-- `/payment-cancel`
-- `/coaches` Browse/search public coaches (also used as "pick a coach to share with")
-- `/coach/[id]` Public coach profile
-- `/coach-edit` Coach-only: edit bio/specialty/location/public toggle
-- `/coach-inbox` Coach-only: clips students shared with them
+### v1.1 (memberships)
+- Free vs Coach plans, daily quota enforcement (HTTP 402)
+- Stripe Checkout (server-defined amounts), `payment_transactions`, webhook
+- Coach profile editor, public coach directory, coach inbox
+- Share-with-coach + comments thread
 
-## Backend API additions (v1.1)
+### v1.2 (this release)
+- **Push notifications** — when a comment is added, the other party gets a
+  push via Expo (`/api/users/push-token` saves token; comments trigger
+  `_send_push_notification`)
+- **Manage Subscription screen** — coaches can cancel renewal (keeps
+  access until expiry), resume renewal, or extend by another month
+  (re-uses Stripe Checkout)
+- **Coach directory filters** — `q`, `location`, `specialty` query params
+  with case-insensitive regex matching, filter UI on `/coaches` screen
+
+## Backend API (full surface)
 | Method | Path | Notes |
 |--------|------|-------|
-| GET    | /api/plans | public list of tiers |
+| GET    | /api/health | liveness |
+| POST   | /api/auth/session | exchange Emergent session_id |
+| GET    | /api/auth/me | current user |
+| POST   | /api/auth/logout | revoke session |
+| PUT    | /api/users/push-token | save / clear Expo push token |
+| GET    | /api/plans | tiers |
 | GET    | /api/analyses/quota | tier + remaining/used_today |
-| POST   | /api/payments/checkout | { plan_id, origin_url } → { url, session_id } |
-| GET    | /api/payments/status/{session_id} | polls Stripe + applies subscription idempotently |
-| POST   | /api/webhook/stripe | Stripe webhook |
-| GET    | /api/coaches | list of public coaches |
-| GET    | /api/coaches/{user_id} | public coach profile |
-| PUT    | /api/coach/profile | bio, specialty, location, public (coach-only) |
-| GET    | /api/coach/inbox | analyses shared with this coach (coach-only) |
-| POST   | /api/analyses/{id}/share | { coach_user_id } |
+| POST   | /api/analyses | upload + analyse (free 1/day → 402) |
+| GET    | /api/analyses | list user's analyses |
+| GET    | /api/analyses/{id} | full analysis |
+| GET    | /api/analyses/{id}/video?token=... | stream original |
+| POST   | /api/analyses/{id}/share | share with a coach |
 | GET    | /api/analyses/{id}/comments | thread |
-| POST   | /api/analyses/{id}/comments | { text } |
-
-## Stripe flow (mobile-aware)
-1. User taps "Upgrade to Coach" on `/paywall`
-2. Frontend → `POST /api/payments/checkout` with `origin_url = window.location.origin` (web) or backend URL (native)
-3. Backend defines amount **server-side** ($120 USD), creates Stripe session,
-   inserts pending row in `payment_transactions`, returns URL
-4. Frontend redirects to Stripe (web: `window.location.href`, native: `WebBrowser.openAuthSessionAsync`)
-5. Stripe → `/payment-success?session_id=...`
-6. Polling endpoint hits `get_checkout_status`, when `paid` it idempotently
-   sets `tier=coach`, `subscription_expires_at = now + 30d`
-7. Webhook `/api/webhook/stripe` reapplies in case redirect is lost
+| POST   | /api/analyses/{id}/comments | add comment + push |
+| POST   | /api/payments/checkout | new Stripe Checkout session |
+| GET    | /api/payments/status/{sid} | poll status, idempotently apply |
+| POST   | /api/payments/cancel-renewal | flag cancel_at_period_end |
+| POST   | /api/payments/resume-renewal | clear flag |
+| POST   | /api/webhook/stripe | webhook receiver |
+| GET    | /api/coaches?q&location&specialty | filtered directory |
+| GET    | /api/coaches/{user_id} | public coach profile |
+| PUT    | /api/coach/profile | edit (coach-only) |
+| GET    | /api/coach/inbox | shared clips (coach-only) |
 
 ## Smart Business Enhancement
-The Coach plan is structured as a marketplace-style **two-sided product**:
-free surfers create demand by sharing clips, paid coaches monetise via the
-public directory + inbox + comments. This drives **both** subscription
-revenue AND retention (free users return because they're awaiting coach
-feedback).
+**Two-sided marketplace**: free surfers fuel demand by sharing clips,
+paid coaches monetise via the directory + inbox + comments. Push
+notifications **close the loop** the moment a coach replies — driving
+return-visits and reinforcing the perceived value of paying $120/month.
 
-## Backlog (next iterations)
-- Push notifications when a coach replies
-- Stripe customer portal (cancel / update card)
-- Pose-tracking overlay on video timeline
+## Test sessions (in mongo `test_database`)
+- `demo_token_active` → free user `demo@surfai.test`
+- `demo_coach_token` → public coach `demo.coach@surfai.test`
+
+## Backlog
+- Stripe webhook → auto-flip tier (currently auto-flip via polling is
+  blocked by emergentintegrations StripeObject metadata bug)
+- Pose-tracking overlay synced with mistake timestamps
 - Side-by-side session compare
-- Search/filter coaches by location & specialty
+- Coach earnings dashboard
+- iOS / Android native push delivery testing on physical devices
