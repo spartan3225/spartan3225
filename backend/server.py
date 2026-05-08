@@ -965,8 +965,15 @@ async def create_checkout(
     return CheckoutSessionOut(url=session.url, session_id=session.id)
 
 
-async def _apply_subscription_if_paid(session_id: str) -> dict:
-    """Idempotently activate subscription when payment is paid."""
+async def _apply_subscription_if_paid(
+    session_id: str, event_paid: bool = False
+) -> dict:
+    """Idempotently activate subscription when payment is paid.
+
+    event_paid: when True (e.g. webhook for checkout.session.completed with
+    payment_status='paid'), trust this as ground truth even if Stripe.retrieve
+    is briefly out of sync.
+    """
     txn = await db.payment_transactions.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
@@ -976,6 +983,7 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
     if txn.get("payment_status") == "paid" and txn.get("applied"):
         return {"applied": True, "already": True, "plan_id": txn.get("plan_id")}
 
+    is_paid = event_paid
     try:
         s = stripe.checkout.Session.retrieve(session_id)
         update = {
@@ -985,11 +993,16 @@ async def _apply_subscription_if_paid(session_id: str) -> dict:
             "currency": s.currency,
             "last_checked_at": datetime.now(timezone.utc),
         }
-        is_paid = s.payment_status == "paid"
+        if s.payment_status == "paid":
+            is_paid = True
     except Exception as e:
         logger.warning(f"Stripe retrieve failed for {session_id}: {e}")
         update = {"last_checked_at": datetime.now(timezone.utc)}
-        is_paid = txn.get("payment_status") == "paid"
+        if not is_paid:
+            is_paid = txn.get("payment_status") == "paid"
+    if event_paid:
+        update["payment_status"] = "paid"
+        update["status"] = update.get("status") or "complete"
 
     if is_paid and not txn.get("applied"):
         plan_id = txn.get("plan_id")
@@ -1114,7 +1127,13 @@ async def stripe_webhook(request: Request):
     ):
         session_id = _obj_id(obj)
         if session_id:
-            await _apply_subscription_if_paid(session_id)
+            # Trust the event's payment_status as ground truth
+            obj_paid = False
+            try:
+                obj_paid = obj["payment_status"] == "paid"
+            except (KeyError, TypeError):
+                obj_paid = getattr(obj, "payment_status", None) == "paid"
+            await _apply_subscription_if_paid(session_id, event_paid=obj_paid)
     elif event_type == "checkout.session.async_payment_failed":
         session_id = _obj_id(obj)
         if session_id:
