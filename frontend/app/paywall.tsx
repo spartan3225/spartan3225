@@ -177,10 +177,10 @@ export default function PaywallScreen() {
                             }
                           >
                             {isCurrent
-                              ? `Renew ${plan.name} – $${plan.amount}/mo`
+                              ? `Renew ${plan.name} – ${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}/mo`
                               : isCoach
-                              ? `Upgrade to ${plan.name} – $${plan.amount}/mo`
-                              : `Choose ${plan.name} – $${plan.amount}/mo`}
+                              ? `Upgrade to ${plan.name} – ${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}/mo`
+                              : `Choose ${plan.name} – ${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}/mo`}
                           </Text>
                         </>
                       )}
@@ -249,7 +249,9 @@ function PlanCard({
       </View>
       <Text style={styles.priceRow}>
         <Text style={[styles.price, highlight && { color: colors.primary }]}>
-          {plan.amount === 0 ? "$0" : `$${plan.amount}`}
+          {plan.amount === 0
+            ? "Free"
+            : `${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}`}
         </Text>
         <Text style={styles.priceUnit}>
           {plan.amount === 0 ? "  forever" : `  /${plan.interval || "month"}`}

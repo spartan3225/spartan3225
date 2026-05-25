@@ -54,7 +54,7 @@ PLANS: dict[str, dict] = {
     "learn": {
         "name": "LEARN",
         "amount": 24.00,
-        "currency": "usd",
+        "currency": "sar",
         "interval_days": 30,
         "description": "LEARN Plan – Monthly",
         "daily_limit": 1,
@@ -62,7 +62,7 @@ PLANS: dict[str, dict] = {
     "advanced": {
         "name": "Advanced",
         "amount": 40.00,
-        "currency": "usd",
+        "currency": "sar",
         "interval_days": 30,
         "description": "Advanced Plan – Monthly",
         "daily_limit": 3,
@@ -70,7 +70,7 @@ PLANS: dict[str, dict] = {
     "pro": {
         "name": "PRO",
         "amount": 53.00,
-        "currency": "usd",
+        "currency": "sar",
         "interval_days": 30,
         "description": "PRO Plan – Monthly",
         "daily_limit": 10,
