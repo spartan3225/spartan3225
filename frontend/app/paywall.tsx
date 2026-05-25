@@ -61,7 +61,22 @@ export default function PaywallScreen() {
       }
       const { url } = await createCheckout(planId, originUrl);
       if (Platform.OS === "web") {
-        window.location.href = url;
+        // Open in a NEW TAB so we escape the Emergent preview iframe.
+        // LemonSqueezy blocks iframe embedding (ERR_BLOCKED_BY_RESPONSE).
+        // Try parent/top first, fall back to window.open.
+        try {
+          if (window.top && window.top !== window.self) {
+            (window.top as Window).location.href = url;
+            return;
+          }
+        } catch {
+          // cross-origin block — fall through to new tab
+        }
+        const newTab = window.open(url, "_blank", "noopener,noreferrer");
+        if (!newTab) {
+          // popup blocked — try direct navigation as last resort
+          window.location.href = url;
+        }
       } else {
         const result = await WebBrowser.openAuthSessionAsync(
           url,
