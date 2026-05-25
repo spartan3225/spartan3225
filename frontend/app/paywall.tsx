@@ -29,6 +29,7 @@ export default function PaywallScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -52,6 +53,14 @@ export default function PaywallScreen() {
   const upgrade = async (planId: PaidPlanId) => {
     setError(null);
     setSubmitting(planId);
+
+    // CRITICAL: open the new tab IMMEDIATELY inside the user-click gesture.
+    // If we await first, browsers consider the popup not user-initiated and block it.
+    let preOpenedTab: Window | null = null;
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      preOpenedTab = window.open("about:blank", "_blank");
+    }
+
     try {
       let originUrl = "";
       if (Platform.OS === "web" && typeof window !== "undefined") {
@@ -60,24 +69,28 @@ export default function PaywallScreen() {
         originUrl = (process.env.EXPO_PUBLIC_BACKEND_URL as string) || "";
       }
       const { url } = await createCheckout(planId, originUrl);
+
       if (Platform.OS === "web") {
-        // Open in a NEW TAB so we escape the Emergent preview iframe.
-        // LemonSqueezy blocks iframe embedding (ERR_BLOCKED_BY_RESPONSE).
-        // Try parent/top first, fall back to window.open.
-        try {
-          if (window.top && window.top !== window.self) {
-            (window.top as Window).location.href = url;
-            return;
-          }
-        } catch {
-          // cross-origin block — fall through to new tab
-        }
-        const newTab = window.open(url, "_blank", "noopener,noreferrer");
-        if (!newTab) {
-          // popup blocked — try direct navigation as last resort
-          window.location.href = url;
+        if (preOpenedTab && !preOpenedTab.closed) {
+          // Pre-opened tab is alive — just navigate it to the checkout URL.
+          preOpenedTab.location.href = url;
+          // Show a helper message so the user knows where to look.
+          setError(
+            "Checkout opened in a new tab. Complete payment there, then come back."
+          );
+        } else {
+          // Popup was blocked. Surface the URL as a clickable link.
+          setCheckoutUrl(url);
+          setError(
+            "Your browser blocked the new tab. Tap the button below to continue to checkout."
+          );
         }
       } else {
+        if (preOpenedTab) {
+          try {
+            preOpenedTab.close();
+          } catch {}
+        }
         const result = await WebBrowser.openAuthSessionAsync(
           url,
           `${originUrl}/payment-success`
@@ -92,6 +105,11 @@ export default function PaywallScreen() {
         router.replace("/payment-cancel" as any);
       }
     } catch (e: any) {
+      if (preOpenedTab && !preOpenedTab.closed) {
+        try {
+          preOpenedTab.close();
+        } catch {}
+      }
       setError(e?.message || "Could not start checkout");
     } finally {
       setSubmitting(null);
@@ -140,6 +158,23 @@ export default function PaywallScreen() {
               <Text style={styles.error} testID="paywall-error">
                 {error}
               </Text>
+            ) : null}
+
+            {checkoutUrl ? (
+              <TouchableOpacity
+                style={styles.fallbackBtn}
+                onPress={() => {
+                  if (Platform.OS === "web" && typeof window !== "undefined") {
+                    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+                  }
+                }}
+                testID="open-checkout-fallback-btn"
+              >
+                <Ionicons name="open-outline" size={16} color="#000" />
+                <Text style={styles.fallbackBtnText}>
+                  Open LemonSqueezy Checkout
+                </Text>
+              </TouchableOpacity>
             ) : null}
 
             {sortedPlans.map((plan) => {
@@ -441,5 +476,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
+  },
+  fallbackBtn: {
+    backgroundColor: colors.primary,
+    marginHorizontal: spacing.lg,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  fallbackBtnText: {
+    color: "#000",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
 });
