@@ -46,7 +46,7 @@ LS_VARIANTS = {
 LS_PLANS = {
     "learn": {
         "name": "LEARN",
-        "amount": 90.0,
+        "amount": 24.0,
         "currency": "usd",
         "interval_days": 30,
         "daily_limit": 1,
@@ -58,7 +58,7 @@ LS_PLANS = {
     },
     "advanced": {
         "name": "Advanced",
-        "amount": 150.0,
+        "amount": 40.0,
         "currency": "usd",
         "interval_days": 30,
         "daily_limit": 3,
@@ -71,7 +71,7 @@ LS_PLANS = {
     },
     "pro": {
         "name": "PRO",
-        "amount": 200.0,
+        "amount": 53.0,
         "currency": "usd",
         "interval_days": 30,
         "daily_limit": 10,
