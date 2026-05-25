@@ -53,7 +53,7 @@ EMERGENT_AUTH_SESSION_URL = (
 PLANS: dict[str, dict] = {
     "learn": {
         "name": "LEARN",
-        "amount": 24.00,
+        "amount": 50.00,
         "currency": "sar",
         "interval_days": 30,
         "description": "LEARN Plan – Monthly",
@@ -61,7 +61,7 @@ PLANS: dict[str, dict] = {
     },
     "advanced": {
         "name": "Advanced",
-        "amount": 40.00,
+        "amount": 80.00,
         "currency": "sar",
         "interval_days": 30,
         "description": "Advanced Plan – Monthly",
@@ -69,7 +69,7 @@ PLANS: dict[str, dict] = {
     },
     "pro": {
         "name": "PRO",
-        "amount": 53.00,
+        "amount": 110.00,
         "currency": "sar",
         "interval_days": 30,
         "description": "PRO Plan – Monthly",
