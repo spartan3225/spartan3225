@@ -47,47 +47,36 @@ EMERGENT_AUTH_SESSION_URL = (
 # Server-defined plans (NEVER trust frontend for amount)
 # NOTE: "free" is NOT in PLANS — it has no Stripe checkout. Free tier limit
 # is enforced as a *lifetime* cap (1 analysis ever), not a daily cap.
+#
+# LemonSqueezy is the active payment provider (3 paid tiers).
+# Stripe entries are kept for backwards-compat with existing users only.
 PLANS: dict[str, dict] = {
-    "beginner": {
-        "name": "Beginner",
-        "amount": 5.00,
+    "learn": {
+        "name": "LEARN",
+        "amount": 90.00,
         "currency": "usd",
         "interval_days": 30,
-        "description": "Beginner Plan – Monthly",
+        "description": "LEARN Plan – Monthly",
         "daily_limit": 1,
-    },
-    "plus": {
-        "name": "Plus",
-        "amount": 12.00,
-        "currency": "usd",
-        "interval_days": 30,
-        "description": "Plus Plan – Monthly",
-        "daily_limit": 3,
-    },
-    "intermediate": {
-        "name": "Intermediate",
-        "amount": 20.00,
-        "currency": "usd",
-        "interval_days": 30,
-        "description": "Intermediate Plan – Monthly",
-        "daily_limit": 6,
     },
     "advanced": {
         "name": "Advanced",
-        "amount": 35.00,
+        "amount": 150.00,
         "currency": "usd",
         "interval_days": 30,
         "description": "Advanced Plan – Monthly",
-        "daily_limit": 10,
+        "daily_limit": 3,
     },
     "pro": {
-        "name": "Pro",
-        "amount": 60.00,
+        "name": "PRO",
+        "amount": 200.00,
         "currency": "usd",
         "interval_days": 30,
-        "description": "Pro Plan – Monthly",
-        "daily_limit": 15,
+        "description": "PRO Plan – Monthly",
+        "daily_limit": 10,
     },
+    # Legacy / hidden tier used internally for community coaches.
+    # Not sold via paywall — assigned by admin or via legacy Stripe data.
     "coach": {
         "name": "Coach Elite",
         "amount": 120.00,
@@ -105,9 +94,12 @@ FREE_LIFETIME_LIMIT = 1
 TIER_DAILY_LIMITS: dict[str, int] = {
     plan_id: plan["daily_limit"] for plan_id, plan in PLANS.items()
 }
+# Backwards compat for any legacy tier IDs that may still exist in DB.
+for legacy_id in ("beginner", "plus", "intermediate"):
+    TIER_DAILY_LIMITS.setdefault(legacy_id, 3)
 
 # All tiers that count as "paid" subscriptions (used for expiry checks etc.).
-PAID_TIERS = set(PLANS.keys())
+PAID_TIERS = set(PLANS.keys()) | {"beginner", "plus", "intermediate"}
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -932,44 +924,16 @@ async def get_plans():
             "is_lifetime": True,
         },
         {
-            "plan_id": "beginner",
-            "name": "Beginner",
-            "amount": PLANS["beginner"]["amount"],
-            "currency": PLANS["beginner"]["currency"],
+            "plan_id": "learn",
+            "name": "LEARN",
+            "amount": PLANS["learn"]["amount"],
+            "currency": PLANS["learn"]["currency"],
             "features": [
-                f"{PLANS['beginner']['daily_limit']} AI analysis per day",
+                f"{PLANS['learn']['daily_limit']} AI analysis per day",
                 "Standard depth analysis",
                 "Personal session history",
             ],
-            "daily_limit": PLANS["beginner"]["daily_limit"],
-            "interval": "month",
-        },
-        {
-            "plan_id": "plus",
-            "name": "Plus",
-            "amount": PLANS["plus"]["amount"],
-            "currency": PLANS["plus"]["currency"],
-            "features": [
-                f"{PLANS['plus']['daily_limit']} AI analyses per day",
-                "Standard depth + extra detail",
-                "Priority queue",
-                "Browse public coach directory",
-            ],
-            "daily_limit": PLANS["plus"]["daily_limit"],
-            "interval": "month",
-        },
-        {
-            "plan_id": "intermediate",
-            "name": "Intermediate",
-            "amount": PLANS["intermediate"]["amount"],
-            "currency": PLANS["intermediate"]["currency"],
-            "features": [
-                f"{PLANS['intermediate']['daily_limit']} AI analyses per day",
-                "Deeper technical breakdown",
-                "Priority queue",
-                "Browse public coach directory",
-            ],
-            "daily_limit": PLANS["intermediate"]["daily_limit"],
+            "daily_limit": PLANS["learn"]["daily_limit"],
             "interval": "month",
         },
         {
@@ -979,7 +943,7 @@ async def get_plans():
             "currency": PLANS["advanced"]["currency"],
             "features": [
                 f"{PLANS['advanced']['daily_limit']} AI analyses per day",
-                "Pro-tour deeper breakdown",
+                "Deeper technical breakdown",
                 "Priority queue",
                 "Browse public coach directory",
             ],
@@ -988,7 +952,7 @@ async def get_plans():
         },
         {
             "plan_id": "pro",
-            "name": "Pro",
+            "name": "PRO",
             "amount": PLANS["pro"]["amount"],
             "currency": PLANS["pro"]["currency"],
             "features": [
@@ -1001,26 +965,12 @@ async def get_plans():
             "daily_limit": PLANS["pro"]["daily_limit"],
             "interval": "month",
         },
-        {
-            "plan_id": "coach",
-            "name": "Coach Elite",
-            "amount": PLANS["coach"]["amount"],
-            "currency": PLANS["coach"]["currency"],
-            "features": [
-                "UNLIMITED AI video analyses",
-                "Pro-tour deeper breakdown",
-                "Public coach profile in directory",
-                "Receive shared clips from students",
-                "Comment on student analyses",
-            ],
-            "daily_limit": -1,
-            "interval": "month",
-        },
     ]
     return {
         "plans": plans_out,
         "free_lifetime_limit": FREE_LIFETIME_LIMIT,
         "free_daily_limit": FREE_LIFETIME_LIMIT,  # legacy key for old clients
+        "provider": "lemonsqueezy",
     }
 
 
@@ -1344,6 +1294,20 @@ async def root():
 @api_router.get("/health")
 async def health():
     return {"status": "ok", "time": datetime.now(timezone.utc).isoformat()}
+
+
+# Wire LemonSqueezy endpoints onto api_router BEFORE include_router.
+try:
+    from routers import lemonsqueezy as _lemonsqueezy
+
+    _lemonsqueezy.attach(
+        app_router=api_router,
+        db=db,
+        get_current_user=get_current_user,
+        paid_tiers_setter=lambda extra: PAID_TIERS.update(extra),
+    )
+except Exception as _e:  # pragma: no cover
+    logging.getLogger("surfai").exception("Failed to attach LemonSqueezy router: %s", _e)
 
 
 app.include_router(api_router)

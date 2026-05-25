@@ -210,8 +210,9 @@ export async function getPlans(): Promise<{
 }
 
 export async function createCheckout(planId: string, originUrl: string) {
+  // LemonSqueezy hosted checkout (replaces Stripe).
   return apiFetch<{ url: string; session_id: string }>(
-    "/payments/checkout",
+    "/payments/lemonsqueezy/checkout",
     {
       method: "POST",
       body: JSON.stringify({ plan_id: planId, origin_url: originUrl }),
@@ -226,7 +227,7 @@ export async function getPaymentStatus(sessionId: string) {
     payment_status: string;
     plan_id?: string;
     tier?: string | null;
-  }>(`/payments/status/${sessionId}`);
+  }>(`/payments/lemonsqueezy/status/${sessionId}`);
 }
 
 // ---- Coaches ----

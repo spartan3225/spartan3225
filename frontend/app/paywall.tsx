@@ -16,25 +16,11 @@ import { createCheckout, getPlans, fetchMe, Plan, User } from "../src/api";
 import { colors, spacing } from "../src/theme";
 
 // Tier ordering for display.
-const TIER_ORDER = [
-  "free",
-  "beginner",
-  "plus",
-  "intermediate",
-  "advanced",
-  "pro",
-  "coach",
-];
+const TIER_ORDER = ["free", "learn", "advanced", "pro"];
 
-const HIGHLIGHTED_TIERS = new Set(["plus", "coach"]);
+const HIGHLIGHTED_TIERS = new Set(["advanced", "pro"]);
 
-type PaidPlanId =
-  | "beginner"
-  | "plus"
-  | "intermediate"
-  | "advanced"
-  | "pro"
-  | "coach";
+type PaidPlanId = "learn" | "advanced" | "pro";
 
 export default function PaywallScreen() {
   const router = useRouter();
@@ -124,7 +110,7 @@ export default function PaywallScreen() {
           <Text style={styles.heading}>RIDE{"\n"}MORE WAVES.</Text>
           <Text style={styles.sub}>
             Free plan gives you one analysis on us. Pick your level — from
-            Beginner to Coach Elite — to keep dialing in your technique.
+            LEARN to PRO — to keep dialing in your technique.
           </Text>
         </View>
 
