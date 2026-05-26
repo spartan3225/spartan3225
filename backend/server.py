@@ -463,52 +463,85 @@ def _strip_json(text: str) -> str:
 async def analyse_video_with_gemini(
     file_path: Path, mime_type: str, deep: bool = False
 ) -> dict:
+    """Try Gemini 2.5 Pro first; fall back to Gemini 2.0 Flash on 400 BadRequest.
+
+    Gemini 2.5 Pro sometimes rejects videos with INVALID_ARGUMENT (codec or
+    container quirks). Flash is more permissive and still good enough.
+    """
     sys_msg = SYSTEM_PROMPT_BASE + (SYSTEM_PROMPT_COACH_EXTRA if deep else "")
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"analysis_{uuid.uuid4().hex[:8]}",
-        system_message=sys_msg,
-    ).with_model("gemini", "gemini-2.5-pro")
     video_file = FileContentWithMimeType(
         file_path=str(file_path), mime_type=mime_type
     )
-    msg = UserMessage(
-        text="Analyse this surfing clip in depth and respond with the strict JSON schema.",
-        file_contents=[video_file],
-    )
-    response = await chat.send_message(msg)
-    raw = response if isinstance(response, str) else str(response)
-    cleaned = _strip_json(raw)
-    try:
-        return json.loads(cleaned)
-    except Exception as e:
-        logger.error(f"Failed JSON parse from Gemini: {e}\nRAW={raw[:500]}")
-        return {
-            "title": "Surfing Session",
-            "score": 50,
-            "overall_rating": "Intermediate",
-            "summary": (raw[:240] if raw else "AI analysis unavailable.").strip(),
-            "strengths": [],
-            "mistakes": [
-                {
-                    "title": "Analysis incomplete",
-                    "detail": "The AI could not produce structured feedback for this clip.",
-                    "severity": "low",
-                    "timestamp": None,
+
+    last_error: Exception | None = None
+    for model_name in ("gemini-2.5-pro", "gemini-2.0-flash"):
+        try:
+            chat = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=f"analysis_{uuid.uuid4().hex[:8]}",
+                system_message=sys_msg,
+            ).with_model("gemini", model_name)
+            msg = UserMessage(
+                text="Analyse this surfing clip in depth and respond with the strict JSON schema.",
+                file_contents=[video_file],
+            )
+            response = await chat.send_message(msg)
+            raw = response if isinstance(response, str) else str(response)
+            cleaned = _strip_json(raw)
+            try:
+                parsed = json.loads(cleaned)
+                logger.info(f"Analysis OK with model={model_name}")
+                return parsed
+            except Exception as e:
+                logger.error(
+                    f"Failed JSON parse from {model_name}: {e}\nRAW={raw[:500]}"
+                )
+                return {
+                    "title": "Surfing Session",
+                    "score": 50,
+                    "overall_rating": "Intermediate",
+                    "summary": (raw[:240] if raw else "AI analysis unavailable.").strip(),
+                    "strengths": [],
+                    "mistakes": [
+                        {
+                            "title": "Analysis incomplete",
+                            "detail": "The AI could not produce structured feedback for this clip.",
+                            "severity": "low",
+                            "timestamp": None,
+                        }
+                    ],
+                    "corrections": [],
+                    "tips": [],
+                    "drills": [],
                 }
-            ],
-            "corrections": [],
-            "tips": [],
-            "drills": [],
-        }
+        except Exception as e:
+            last_error = e
+            err_text = str(e)
+            logger.warning(
+                "Gemini model %s failed: %s — trying next model",
+                model_name,
+                err_text[:200],
+            )
+            # If error is *not* a bad-request type, no point retrying.
+            if (
+                "BadRequest" not in err_text
+                and "INVALID_ARGUMENT" not in err_text
+                and "400" not in err_text
+            ):
+                break
+    # Both models failed — re-raise the original error so caller marks as failed.
+    raise last_error or Exception("Gemini analysis failed")
 
 
 # ---------------- Analysis routes ----------------
 @api_router.get("/analyses/quota")
 async def get_quota(user: User = Depends(get_current_user)):
     # Free tier: lifetime cap (1 analysis ever) — not daily.
+    # Exclude failed analyses so the user isn't penalised when our AI rejects a clip.
     if user.tier == "free":
-        used_total = await db.analyses.count_documents({"user_id": user.user_id})
+        used_total = await db.analyses.count_documents(
+            {"user_id": user.user_id, "status": {"$ne": "failed"}}
+        )
         return {
             "tier": user.tier,
             "remaining": max(0, FREE_LIFETIME_LIMIT - used_total),
@@ -530,7 +563,11 @@ async def get_quota(user: User = Depends(get_current_user)):
         hour=0, minute=0, second=0, microsecond=0
     )
     used = await db.analyses.count_documents(
-        {"user_id": user.user_id, "created_at": {"$gte": today_start}}
+        {
+            "user_id": user.user_id,
+            "created_at": {"$gte": today_start},
+            "status": {"$ne": "failed"},
+        }
     )
     return {
         "tier": user.tier,
@@ -577,8 +614,11 @@ async def create_analysis(
 ):
     # Enforce limit by tier.
     # Free tier: lifetime cap. Paid tiers: per-day cap.
+    # Exclude failed analyses so AI errors don't burn the user's quota.
     if user.tier == "free":
-        used_total = await db.analyses.count_documents({"user_id": user.user_id})
+        used_total = await db.analyses.count_documents(
+            {"user_id": user.user_id, "status": {"$ne": "failed"}}
+        )
         if used_total >= FREE_LIFETIME_LIMIT:
             raise HTTPException(
                 status_code=402,
@@ -594,7 +634,11 @@ async def create_analysis(
                 hour=0, minute=0, second=0, microsecond=0
             )
             used = await db.analyses.count_documents(
-                {"user_id": user.user_id, "created_at": {"$gte": today_start}}
+                {
+                    "user_id": user.user_id,
+                    "created_at": {"$gte": today_start},
+                    "status": {"$ne": "failed"},
+                }
             )
             if used >= limit:
                 tier_label = (user.tier or "free").capitalize()
