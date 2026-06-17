@@ -9,6 +9,7 @@ import uuid
 import json
 import re
 import shutil
+import asyncio
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
@@ -460,19 +461,75 @@ def _strip_json(text: str) -> str:
     return text
 
 
+async def _refine_with_claude(raw_analysis: dict, deep: bool = False) -> dict:
+    """Polish Gemini's surf-analysis JSON using Claude Sonnet 4.6.
+
+    Best-effort: if Claude fails for any reason, we return the original Gemini
+    output unchanged so user still gets a result.
+    """
+    refine_prompt = (
+        "You are SurfCoach23 — a world-class surf-technique reviewer. "
+        "Below is a draft JSON analysis of a surfing clip produced by a vision AI. "
+        "Your job: REWRITE it to be more accurate, more actionable, and more "
+        "encouraging — while KEEPING THE EXACT SAME JSON SCHEMA. "
+        "Rules:\n"
+        " - Output ONLY valid JSON, no prose, no markdown fences.\n"
+        " - Keep the SAME keys: title, score, overall_rating, summary, strengths, "
+        "mistakes, corrections, tips, drills.\n"
+        " - `mistakes` items must keep keys: title, detail, severity, timestamp.\n"
+        " - score: int 0-100. overall_rating: one of "
+        "[Beginner, Intermediate, Advanced, Pro].\n"
+        " - Tighten wording. Cut filler. Use surf-coach voice (e.g. 'plant your "
+        "back foot earlier').\n"
+        " - Aim for 4-6 strengths, 3-5 mistakes, 4-6 tips, 2-4 drills.\n"
+        " - If draft is empty or low quality, infer reasonable feedback from "
+        "any clue (title, summary, score) — do NOT just echo the draft.\n"
+        + ("\n - DEEP MODE: add more technical detail per item (3-5 sentences each)."
+           if deep else "")
+    )
+
+    draft_json = json.dumps(raw_analysis, ensure_ascii=False, indent=2)
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"refine_{uuid.uuid4().hex[:8]}",
+            system_message=refine_prompt,
+        ).with_model("anthropic", "claude-sonnet-4-6")
+        msg = UserMessage(
+            text=f"DRAFT_JSON:\n{draft_json}\n\nReturn the polished JSON now."
+        )
+        response = await chat.send_message(msg)
+        raw = response if isinstance(response, str) else str(response)
+        cleaned = _strip_json(raw)
+        polished = json.loads(cleaned)
+        # Sanity-check schema; if missing core keys, fall back.
+        required = {"title", "score", "overall_rating", "summary"}
+        if not isinstance(polished, dict) or not required.issubset(polished.keys()):
+            logger.warning("Claude refine returned unexpected schema — keeping draft")
+            return raw_analysis
+        # Merge: prefer polished fields, fall back to draft where missing
+        merged = dict(raw_analysis)
+        merged.update({k: v for k, v in polished.items() if v not in (None, "", [])})
+        return merged
+    except Exception as e:
+        logger.warning(f"Claude refinement failed ({type(e).__name__}: {str(e)[:160]}) — using Gemini draft")
+        return raw_analysis
+
+
 async def analyse_video_with_gemini(
     file_path: Path, mime_type: str, deep: bool = False
 ) -> dict:
     """Try Gemini 2.5 Pro first; fall back to Gemini 2.0 Flash on 400 BadRequest.
 
-    Gemini 2.5 Pro sometimes rejects videos with INVALID_ARGUMENT (codec or
-    container quirks). Flash is more permissive and still good enough.
+    After getting a draft from Gemini, refine it through Claude Sonnet 4.6
+    for a more polished, coach-quality response.
     """
     sys_msg = SYSTEM_PROMPT_BASE + (SYSTEM_PROMPT_COACH_EXTRA if deep else "")
     video_file = FileContentWithMimeType(
         file_path=str(file_path), mime_type=mime_type
     )
 
+    draft: dict | None = None
     last_error: Exception | None = None
     for model_name in ("gemini-2.5-pro", "gemini-2.0-flash"):
         try:
@@ -489,14 +546,14 @@ async def analyse_video_with_gemini(
             raw = response if isinstance(response, str) else str(response)
             cleaned = _strip_json(raw)
             try:
-                parsed = json.loads(cleaned)
-                logger.info(f"Analysis OK with model={model_name}")
-                return parsed
+                draft = json.loads(cleaned)
+                logger.info(f"Gemini analysis OK with model={model_name}")
+                break
             except Exception as e:
                 logger.error(
                     f"Failed JSON parse from {model_name}: {e}\nRAW={raw[:500]}"
                 )
-                return {
+                draft = {
                     "title": "Surfing Session",
                     "score": 50,
                     "overall_rating": "Intermediate",
@@ -514,6 +571,7 @@ async def analyse_video_with_gemini(
                     "tips": [],
                     "drills": [],
                 }
+                break
         except Exception as e:
             last_error = e
             err_text = str(e)
@@ -522,15 +580,20 @@ async def analyse_video_with_gemini(
                 model_name,
                 err_text[:200],
             )
-            # If error is *not* a bad-request type, no point retrying.
             if (
                 "BadRequest" not in err_text
                 and "INVALID_ARGUMENT" not in err_text
                 and "400" not in err_text
             ):
                 break
-    # Both models failed — re-raise the original error so caller marks as failed.
-    raise last_error or Exception("Gemini analysis failed")
+
+    if draft is None:
+        # Both models failed.
+        raise last_error or Exception("Gemini analysis failed")
+
+    # Hybrid step: Claude refines Gemini's draft for coach-quality output.
+    polished = await _refine_with_claude(draft, deep=deep)
+    return polished
 
 
 # ---------------- Analysis routes ----------------
@@ -659,6 +722,60 @@ async def create_analysis(
         shutil.copyfileobj(file.file, f)
 
     mime = file.content_type or "video/mp4"
+
+    # Auto-convert non-MP4 formats (especially iPhone .MOV with HEVC) to MP4
+    # so Gemini can reliably ingest them. Cheap and fast for short clips.
+    if ext != "mp4":
+        try:
+            mp4_path = user_dir / f"{analysis_id}.mp4"
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(save_path),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-crf",
+                "26",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                "-loglevel",
+                "error",
+                str(mp4_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                _, err = await asyncio.wait_for(proc.communicate(), timeout=120)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.communicate()
+                logger.warning("ffmpeg timed out — using original file")
+                mp4_path = None
+            if mp4_path and mp4_path.exists() and mp4_path.stat().st_size > 0:
+                try:
+                    save_path.unlink()
+                except Exception:
+                    pass
+                save_path = mp4_path
+                mime = "video/mp4"
+                logger.info(
+                    "Converted %s -> mp4 for analysis_id=%s", ext, analysis_id
+                )
+            else:
+                logger.warning(
+                    "ffmpeg conversion failed for analysis_id=%s, err=%s",
+                    analysis_id,
+                    (err.decode("utf-8", "ignore") if err else "")[:200],
+                )
+        except FileNotFoundError:
+            logger.warning("ffmpeg not installed — skipping conversion")
+        except Exception as e:
+            logger.exception("ffmpeg conversion error: %s", e)
 
     doc = {
         "analysis_id": analysis_id,
