@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing } from "../src/theme";
 import { fetchMe, exchangeSessionId } from "../src/api";
@@ -57,9 +58,9 @@ export default function LoginScreen() {
         )}`;
         return;
       }
-      // Native flow
-      const redirectUrl =
-        (process.env.EXPO_PUBLIC_BACKEND_URL as string) + "/auth-callback";
+      // Native flow — use Expo Linking to build a dynamic deep-link URL
+      // that works across preview, production, and any custom domain.
+      const redirectUrl = Linking.createURL("/auth-callback");
       const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
         redirectUrl
       )}`;
