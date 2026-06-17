@@ -797,17 +797,49 @@ async def create_analysis(
     }
     await db.analyses.insert_one(dict(doc))
 
-    try:
-        result = await analyse_video_with_gemini(
-            save_path, mime, deep=(user.tier == "coach")
+    # Kick off AI analysis in the background so this HTTP request returns
+    # quickly (Cloudflare proxy times out at ~100s).
+    asyncio.create_task(
+        _run_analysis_in_background(
+            analysis_id=analysis_id,
+            save_path=save_path,
+            mime=mime,
+            deep=(user.tier == "coach"),
         )
+    )
+
+    # Return the in-progress record to the client.
+    final = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})
+    return AnalysisOut(
+        **{k: final[k] for k in AnalysisOut.model_fields if k in final}
+    )
+
+
+async def _run_analysis_in_background(
+    analysis_id: str, save_path: Path, mime: str, deep: bool
+) -> None:
+    """Run Gemini + Claude pipeline and update the analysis doc.
+
+    Runs detached from the HTTP request so the proxy timeout doesn't matter.
+    """
+    try:
+        result = await analyse_video_with_gemini(save_path, mime, deep=deep)
     except Exception as e:
-        logger.exception("AI analysis failed")
+        logger.exception("AI analysis failed (background)")
         await db.analyses.update_one(
             {"analysis_id": analysis_id},
-            {"$set": {"status": "failed", "summary": f"Analysis failed: {e}"}},
+            {
+                "$set": {
+                    "status": "failed",
+                    "summary": (
+                        "We couldn't analyse this clip. Try a shorter video "
+                        "(under 60 seconds, MP4, under 50MB)."
+                    ),
+                    "error": str(e)[:300],
+                }
+            },
         )
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {e}")
+        return
 
     update = {
         "status": "ready",
@@ -822,11 +854,6 @@ async def create_analysis(
         "drills": _coerce_str_list(result.get("drills")),
     }
     await db.analyses.update_one({"analysis_id": analysis_id}, {"$set": update})
-
-    final = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})
-    return AnalysisOut(
-        **{k: final[k] for k in AnalysisOut.model_fields if k in final}
-    )
 
 
 @api_router.get("/analyses", response_model=List[AnalysisListItem])
