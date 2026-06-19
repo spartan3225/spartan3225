@@ -49,9 +49,12 @@ export default function TermsScreen() {
         </Section>
 
         <Section title="5. Refunds">
-          Subscription fees are non-refundable except where required by law.
-          You may cancel at any time to prevent future charges. If you believe
-          you were charged in error, contact support within 7 days.
+          We offer a 7-day money-back guarantee on your first subscription
+          payment. Email coach1othman@gmail.com within 7 days of your first
+          charge for a full refund. After the 7-day window, subscription
+          fees are non-refundable except where required by law. You can
+          cancel anytime to prevent future charges. Full details on the
+          Refund Policy page.
         </Section>
 
         <Section title="6. User Content">
@@ -91,7 +94,7 @@ export default function TermsScreen() {
         </Section>
 
         <Section title="12. Contact">
-          Questions? Email <Text style={styles.link}>support@surfcoach23.app</Text>.
+          Questions? Email <Text style={styles.link}>coach1othman@gmail.com</Text>.
         </Section>
 
         <View style={{ height: spacing.xxl }} />

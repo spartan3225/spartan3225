@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Image,
   Platform,
+  ScrollView,
+  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
@@ -18,6 +20,8 @@ import { fetchMe, exchangeSessionId } from "../src/api";
 // Hero: dramatic full-body action surfing photograph
 const HERO_IMAGE =
   "https://images.unsplash.com/photo-1530870110042-98b2cb110834?w=1400&q=85&auto=format&fit=crop";
+
+const SCREEN_H = Dimensions.get("window").height;
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -93,53 +97,279 @@ export default function LoginScreen() {
   }
 
   return (
-    <View style={styles.container} testID="login-screen">
-      <Image source={{ uri: HERO_IMAGE }} style={styles.hero} />
-      <View style={styles.overlay} />
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: 0 }}
+      testID="login-screen"
+      showsVerticalScrollIndicator={false}
+    >
+      {/* ===== HERO ===== */}
+      <View style={styles.hero}>
+        <Image source={{ uri: HERO_IMAGE }} style={styles.heroImg} />
+        <View style={styles.heroOverlay} />
 
-      <View style={styles.content}>
-        <View style={styles.brandRow}>
-          <View style={styles.brandDot} />
-          <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
-        </View>
-
-        <Text style={styles.title} testID="login-title">
-          MASTER{"\n"}EVERY{"\n"}WAVE.
-        </Text>
-        <Text style={styles.subtitle}>
-          Upload a clip. Get instant pro-tour technique analysis — score,
-          mistakes, corrections and drills, frame by frame.
-        </Text>
-
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>AI</Text>
-            <Text style={styles.statLabel}>Coach</Text>
+        <View style={styles.heroContent}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandDot} />
+            <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>4K</Text>
-            <Text style={styles.statLabel}>Video</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>30s</Text>
-            <Text style={styles.statLabel}>Insights</Text>
-          </View>
-        </View>
 
-        {error ? (
-          <Text style={styles.error} testID="login-error">
-            {error}
+          <Text style={styles.title} testID="login-title">
+            MASTER{"\n"}EVERY{"\n"}WAVE.
           </Text>
-        ) : null}
+          <Text style={styles.subtitle}>
+            Upload a clip. Get instant pro-tour technique analysis — score,
+            mistakes, corrections and drills, frame by frame.
+          </Text>
 
+          <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>AI</Text>
+              <Text style={styles.statLabel}>Coach</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>4K</Text>
+              <Text style={styles.statLabel}>Video</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>30s</Text>
+              <Text style={styles.statLabel}>Insights</Text>
+            </View>
+          </View>
+
+          {error ? (
+            <Text style={styles.error} testID="login-error">
+              {error}
+            </Text>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.signInBtn}
+            onPress={onSignIn}
+            activeOpacity={0.85}
+            disabled={loggingIn}
+            testID="login-google-btn"
+          >
+            {loggingIn ? (
+              <ActivityIndicator color="#000" />
+            ) : (
+              <>
+                <Ionicons
+                  name="logo-google"
+                  size={18}
+                  color="#000"
+                  style={{ marginRight: 10 }}
+                />
+                <Text style={styles.signInText}>Continue with Google</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <Text style={styles.legal}>
+            Your video clips stay private to your account.
+          </Text>
+        </View>
+      </View>
+
+      {/* ===== HOW IT WORKS ===== */}
+      <View style={styles.section}>
+        <Text style={styles.sectionKicker}>HOW IT WORKS</Text>
+        <Text style={styles.sectionTitle}>Three steps to better surfing.</Text>
+
+        <View style={styles.stepCard}>
+          <View style={styles.stepNumBox}>
+            <Text style={styles.stepNum}>01</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.stepTitle}>Upload your clip</Text>
+            <Text style={styles.stepDesc}>
+              From your phone gallery — any wave, any angle. We auto-convert
+              iPhone .MOV to .MP4 in the cloud.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.stepCard}>
+          <View style={styles.stepNumBox}>
+            <Text style={styles.stepNum}>02</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.stepTitle}>AI breaks it down</Text>
+            <Text style={styles.stepDesc}>
+              Google Gemini analyses motion frame-by-frame. Claude Sonnet
+              rewrites the result in clean pro-coach language.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.stepCard}>
+          <View style={styles.stepNumBox}>
+            <Text style={styles.stepNum}>03</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.stepTitle}>Get score, fixes & drills</Text>
+            <Text style={styles.stepDesc}>
+              Technical score, top mistakes, frame-specific corrections, and
+              dry-land drills you can do today.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ===== PRICING ===== */}
+      <View style={[styles.section, styles.sectionAlt]}>
+        <Text style={styles.sectionKicker}>PRICING</Text>
+        <Text style={styles.sectionTitle}>Pick the plan that fits.</Text>
+        <Text style={styles.sectionSubtitle}>
+          Prices in Saudi Riyal (SAR). Cancel anytime. Billed monthly through
+          LemonSqueezy.
+        </Text>
+
+        <View style={styles.priceCard}>
+          <View style={styles.priceHeader}>
+            <Text style={styles.priceTier}>FREE</Text>
+            <View>
+              <Text style={styles.priceAmount}>SAR 0</Text>
+            </View>
+          </View>
+          <Text style={styles.priceBullet}>• 1 lifetime AI analysis</Text>
+          <Text style={styles.priceBullet}>• Standard quality</Text>
+          <Text style={styles.priceBullet}>• Try before you buy</Text>
+        </View>
+
+        <View style={styles.priceCard}>
+          <View style={styles.priceHeader}>
+            <Text style={styles.priceTier}>LEARN</Text>
+            <View>
+              <Text style={styles.priceAmount}>SAR 50</Text>
+              <Text style={styles.pricePeriod}>/ month</Text>
+            </View>
+          </View>
+          <Text style={styles.priceBullet}>• 3 AI analyses / day</Text>
+          <Text style={styles.priceBullet}>• Full coach-language feedback</Text>
+          <Text style={styles.priceBullet}>• Drill recommendations</Text>
+        </View>
+
+        <View style={[styles.priceCard, styles.priceCardFeatured]}>
+          <View style={styles.featuredBadge}>
+            <Text style={styles.featuredBadgeText}>POPULAR</Text>
+          </View>
+          <View style={styles.priceHeader}>
+            <Text style={styles.priceTier}>ADVANCED</Text>
+            <View>
+              <Text style={styles.priceAmount}>SAR 80</Text>
+              <Text style={styles.pricePeriod}>/ month</Text>
+            </View>
+          </View>
+          <Text style={styles.priceBullet}>• 7 AI analyses / day</Text>
+          <Text style={styles.priceBullet}>• Frame-by-frame breakdown</Text>
+          <Text style={styles.priceBullet}>• Share with a coach</Text>
+          <Text style={styles.priceBullet}>• Priority processing</Text>
+        </View>
+
+        <View style={styles.priceCard}>
+          <View style={styles.priceHeader}>
+            <Text style={styles.priceTier}>PRO</Text>
+            <View>
+              <Text style={styles.priceAmount}>SAR 110</Text>
+              <Text style={styles.pricePeriod}>/ month</Text>
+            </View>
+          </View>
+          <Text style={styles.priceBullet}>• 15 AI analyses / day</Text>
+          <Text style={styles.priceBullet}>• Unlimited coach shares</Text>
+          <Text style={styles.priceBullet}>• Highest quality model</Text>
+          <Text style={styles.priceBullet}>• Early access to new features</Text>
+        </View>
+
+        <Text style={styles.refundLine}>
+          7-day money-back guarantee on your first subscription —{" "}
+          <Text
+            style={styles.refundLink}
+            onPress={() => router.push("/refund" as any)}
+          >
+            see refund policy
+          </Text>
+          .
+        </Text>
+      </View>
+
+      {/* ===== FAQ ===== */}
+      <View style={styles.section}>
+        <Text style={styles.sectionKicker}>FAQ</Text>
+        <Text style={styles.sectionTitle}>Quick answers.</Text>
+
+        <FaqItem
+          q="Who is SurfCoach23 for?"
+          a="Surfers of all levels who want honest, technical feedback on their riding without waiting for a human coach."
+        />
+        <FaqItem
+          q="What videos work best?"
+          a="A clear 5–60 second clip filmed from the beach or a chase camera. Side-on angles work best. Up to 200 MB per upload."
+        />
+        <FaqItem
+          q="Will my videos stay private?"
+          a="Yes. Your clips are visible only to you, unless you explicitly tap 'Share with coach'. We never sell your data. See our Privacy Policy."
+        />
+        <FaqItem
+          q="Can I cancel anytime?"
+          a="Yes. Open Manage Plan in the app and tap Cancel renewal. Your access stays active until the end of the period you already paid for."
+        />
+        <FaqItem
+          q="Do you offer refunds?"
+          a="Yes — a 7-day money-back guarantee on your first subscription. After that, see our Refund Policy for details."
+        />
+      </View>
+
+      {/* ===== CONTACT ===== */}
+      <View style={[styles.section, styles.sectionAlt]}>
+        <Text style={styles.sectionKicker}>CONTACT</Text>
+        <Text style={styles.sectionTitle}>Talk to a human.</Text>
+        <Text style={styles.sectionSubtitle}>
+          Support, refunds, business questions — we read every email and reply
+          within 2 business days.
+        </Text>
+
+        <View style={styles.contactCard}>
+          <Ionicons name="mail-outline" size={20} color={colors.primary} />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.contactLabel}>EMAIL</Text>
+            <Text style={styles.contactValue}>coach1othman@gmail.com</Text>
+          </View>
+        </View>
+
+        <View style={styles.contactCard}>
+          <Ionicons name="location-outline" size={20} color={colors.primary} />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.contactLabel}>BASED IN</Text>
+            <Text style={styles.contactValue}>Saudi Arabia</Text>
+          </View>
+        </View>
+
+        <View style={styles.contactCard}>
+          <Ionicons name="card-outline" size={20} color={colors.primary} />
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <Text style={styles.contactLabel}>PAYMENT PROCESSOR</Text>
+            <Text style={styles.contactValue}>
+              LemonSqueezy (Merchant of Record)
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ===== FINAL CTA ===== */}
+      <View style={styles.ctaSection}>
+        <Text style={styles.ctaTitle}>Ready to level up?</Text>
+        <Text style={styles.ctaSubtitle}>
+          Start with one free AI analysis. No card needed.
+        </Text>
         <TouchableOpacity
-          style={styles.signInBtn}
+          style={styles.ctaBtn}
           onPress={onSignIn}
           activeOpacity={0.85}
           disabled={loggingIn}
-          testID="login-google-btn"
+          testID="cta-google-btn"
         >
           {loggingIn ? (
             <ActivityIndicator color="#000" />
@@ -155,26 +385,46 @@ export default function LoginScreen() {
             </>
           )}
         </TouchableOpacity>
+      </View>
 
-        <Text style={styles.legal}>
-          Your video clips stay private to your account.
-        </Text>
-        <View style={styles.legalLinksRow}>
+      {/* ===== FOOTER ===== */}
+      <View style={styles.footer}>
+        <Text style={styles.footerBrand}>SURFCOACH · 23</Text>
+        <View style={styles.footerLinksRow}>
           <TouchableOpacity
             onPress={() => router.push("/terms" as any)}
-            testID="login-terms-link"
+            testID="footer-terms-link"
           >
-            <Text style={styles.legalLink}>Terms</Text>
+            <Text style={styles.footerLink}>Terms</Text>
           </TouchableOpacity>
-          <Text style={styles.legalDot}>·</Text>
+          <Text style={styles.footerDot}>·</Text>
           <TouchableOpacity
             onPress={() => router.push("/privacy" as any)}
-            testID="login-privacy-link"
+            testID="footer-privacy-link"
           >
-            <Text style={styles.legalLink}>Privacy</Text>
+            <Text style={styles.footerLink}>Privacy</Text>
+          </TouchableOpacity>
+          <Text style={styles.footerDot}>·</Text>
+          <TouchableOpacity
+            onPress={() => router.push("/refund" as any)}
+            testID="footer-refund-link"
+          >
+            <Text style={styles.footerLink}>Refunds</Text>
           </TouchableOpacity>
         </View>
+        <Text style={styles.footerCopy}>
+          © 2026 SurfCoach23 · All rights reserved
+        </Text>
       </View>
+    </ScrollView>
+  );
+}
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  return (
+    <View style={styles.faqItem}>
+      <Text style={styles.faqQ}>{q}</Text>
+      <Text style={styles.faqA}>{a}</Text>
     </View>
   );
 }
@@ -182,16 +432,22 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { alignItems: "center", justifyContent: "center" },
+
+  // ===== HERO =====
   hero: {
+    minHeight: SCREEN_H > 700 ? SCREEN_H : 700,
+    backgroundColor: colors.background,
+  },
+  heroImg: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    height: "65%",
+    height: "70%",
     resizeMode: "cover",
     opacity: 0.85,
   },
-  overlay: {
+  heroOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
@@ -199,7 +455,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: "rgba(10,10,10,0.55)",
   },
-  content: {
+  heroContent: {
     flex: 1,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xxl + spacing.lg,
@@ -214,11 +470,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  brandDot: {
-    width: 10,
-    height: 10,
-    backgroundColor: colors.primary,
-  },
+  brandDot: { width: 10, height: 10, backgroundColor: colors.primary },
   brandLabel: {
     color: colors.primary,
     letterSpacing: 4,
@@ -251,11 +503,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   statBox: { flex: 1, alignItems: "flex-start" },
-  statDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: colors.border,
-  },
+  statDivider: { width: 1, height: 28, backgroundColor: colors.border },
   statValue: {
     color: colors.textPrimary,
     fontSize: 22,
@@ -289,42 +537,237 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.md,
   },
-  legalLinksRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 6,
+  error: { color: colors.error, marginBottom: spacing.sm, fontSize: 13 },
+
+  // ===== SECTIONS =====
+  section: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl + spacing.md,
   },
-  legalLink: {
-    color: colors.textPrimary,
-    fontSize: 11,
-    textDecorationLine: "underline",
-    opacity: 0.7,
-  },
-  legalDot: { color: colors.textMuted, fontSize: 11 },
-  heroFootRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: -4,
-    marginBottom: spacing.md,
-  },
-  heroFootLabel: {
-    color: colors.textMuted,
-    fontSize: 9,
-    letterSpacing: 2,
-    fontWeight: "800",
-  },
-  heroFootName: {
+  sectionAlt: { backgroundColor: colors.surface },
+  sectionKicker: {
     color: colors.primary,
     fontSize: 11,
+    letterSpacing: 3,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    color: colors.textPrimary,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: "900",
+    letterSpacing: -1,
+    marginBottom: 6,
+  },
+  sectionSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+    maxWidth: 480,
+  },
+
+  // ===== STEPS =====
+  stepCard: {
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  stepNumBox: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepNum: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  stepTitle: {
+    color: colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  stepDesc: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+
+  // ===== PRICING =====
+  priceCard: {
+    backgroundColor: colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 4,
+  },
+  priceCardFeatured: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  featuredBadge: {
+    position: "absolute",
+    top: -10,
+    right: spacing.md,
+    backgroundColor: colors.primary,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  featuredBadgeText: {
+    color: "#000",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  priceHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginBottom: spacing.md,
+  },
+  priceTier: {
+    color: colors.textPrimary,
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 2,
+  },
+  priceAmount: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -1,
+    textAlign: "right",
+  },
+  pricePeriod: {
+    color: colors.textMuted,
+    fontSize: 11,
+    textAlign: "right",
+    marginTop: -2,
+  },
+  priceBullet: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  refundLine: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: spacing.md,
+    lineHeight: 18,
+  },
+  refundLink: {
+    color: colors.primary,
+    textDecorationLine: "underline",
+    fontWeight: "700",
+  },
+
+  // ===== FAQ =====
+  faqItem: {
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  faqQ: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  faqA: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+
+  // ===== CONTACT =====
+  contactCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surfaceElevated,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  contactLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
     letterSpacing: 2,
     fontWeight: "800",
+    marginBottom: 2,
   },
-  error: {
-    color: colors.error,
-    marginBottom: spacing.sm,
-    fontSize: 13,
+  contactValue: {
+    color: colors.textPrimary,
+    fontSize: 14,
+    fontWeight: "600",
   },
+
+  // ===== CTA =====
+  ctaSection: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xxl,
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  ctaTitle: {
+    color: colors.textPrimary,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -1,
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  ctaSubtitle: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: spacing.lg,
+  },
+  ctaBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    minWidth: 280,
+  },
+
+  // ===== FOOTER =====
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  footerBrand: {
+    color: colors.primary,
+    fontSize: 12,
+    letterSpacing: 4,
+    fontWeight: "800",
+    marginBottom: spacing.md,
+  },
+  footerLinksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: spacing.md,
+  },
+  footerLink: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    textDecorationLine: "underline",
+    opacity: 0.85,
+  },
+  footerDot: { color: colors.textMuted, fontSize: 12 },
+  footerCopy: { color: colors.textMuted, fontSize: 11 },
 });
