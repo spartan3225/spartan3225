@@ -1,0 +1,53 @@
+# ---- Heavy / generated folders ----
+**/.metro-cache/
+**/.expo/
+**/.expo-shared/
+**/.next/
+**/dist/
+**/build/
+**/.cache/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# ---- User-uploaded media (regenerated at runtime) ----
+backend/uploads/
+backend/uploads/**
+**/uploads/
+
+# ---- Node / Python local installs (rebuilt in image) ----
+node_modules/
+**/node_modules/
+.venv/
+venv/
+**/.venv/
+
+# ---- VCS / IDE ----
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---- Logs ----
+*.log
+logs/
+**/logs/
+
+# ---- Local env files (secrets injected via platform) ----
+.env.local
+.env.*.local
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+
+# ---- Test / report artifacts ----
+test_reports/
+**/test_reports/
+*.test.js.snap
+coverage/
+
+# ---- Memory / scratch files ----
+memory/
