@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "SurfAI",
-    "slug": "surfai",
+    "name": "SurfCoach23",
+    "slug": "surfcoach23",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "surfai",
+    "scheme": "surfcoach23",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.surfcoach23.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Record surfing clips for AI analysis",
         "NSPhotoLibraryUsageDescription": "Pick surfing videos to analyse",
@@ -17,9 +19,11 @@
       }
     },
     "android": {
+      "package": "com.surfcoach23.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
