@@ -1168,66 +1168,22 @@ async def create_checkout(
     request: Request,
     user: User = Depends(get_current_user),
 ):
-    if req.plan_id not in PLANS:
-        raise HTTPException(status_code=400, detail="Invalid plan")
-    plan = PLANS[req.plan_id]
+    """DEPRECATED — use /api/payments/lemonsqueezy/checkout instead.
 
-    origin = req.origin_url.rstrip("/")
-    success_url = f"{origin}/payment-success?session_id={{CHECKOUT_SESSION_ID}}"
-    cancel_url = f"{origin}/payment-cancel"
-
-    try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            payment_method_types=["card"],
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": plan["currency"],
-                        "product_data": {
-                            "name": plan["description"],
-                            "description": f"SurfCoach23 {plan['name']} – {plan['interval_days']} days",
-                        },
-                        "unit_amount": int(round(plan["amount"] * 100)),
-                    },
-                    "quantity": 1,
-                }
-            ],
-            success_url=success_url,
-            cancel_url=cancel_url,
-            customer_email=user.email,
-            metadata={
-                "user_id": user.user_id,
-                "email": user.email,
-                "plan_id": req.plan_id,
-                "source": "surfcoach23_mobile",
-            },
-        )
-    except Exception as e:
-        logger.exception("Stripe checkout creation failed")
-        raise HTTPException(status_code=500, detail=f"Stripe error: {e}")
-
-    await db.payment_transactions.insert_one(
-        {
-            "session_id": session.id,
-            "user_id": user.user_id,
-            "email": user.email,
-            "plan_id": req.plan_id,
-            "amount": float(plan["amount"]),
-            "currency": plan["currency"],
-            "metadata": {
-                "user_id": user.user_id,
-                "email": user.email,
-                "plan_id": req.plan_id,
-            },
-            "payment_status": "initiated",
-            "status": "open",
-            "created_at": datetime.now(timezone.utc),
-            "applied": False,
-        }
+    Kept for backwards compatibility with very old app builds. New clients are
+    routed through the LemonSqueezy router which supports Apple Pay, Google
+    Pay, mada, and credit cards via a Saudi-licensed processor.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "This payment endpoint is no longer supported. "
+            "Please update the app to the latest version."
+        ),
     )
 
-    return CheckoutSessionOut(url=session.url, session_id=session.id)
+
+# ─── Legacy Stripe handler removed (replaced by LemonSqueezy) ───────────────
 
 
 async def _apply_subscription_if_paid(
@@ -1447,8 +1403,8 @@ async def update_push_token(
 
 @api_router.post("/payments/cancel-renewal", response_model=CancelRenewalResponse)
 async def cancel_renewal(user: User = Depends(get_current_user)):
-    if user.tier != "coach":
-        raise HTTPException(status_code=400, detail="No active Coach subscription")
+    if user.tier not in PAID_TIERS:
+        raise HTTPException(status_code=400, detail="No active subscription")
     await db.users.update_one(
         {"user_id": user.user_id},
         {"$set": {"cancel_at_period_end": True, "subscription_status": "canceled"}},
@@ -1461,8 +1417,8 @@ async def cancel_renewal(user: User = Depends(get_current_user)):
 
 @api_router.post("/payments/resume-renewal", response_model=CancelRenewalResponse)
 async def resume_renewal(user: User = Depends(get_current_user)):
-    if user.tier != "coach":
-        raise HTTPException(status_code=400, detail="No active Coach subscription")
+    if user.tier not in PAID_TIERS:
+        raise HTTPException(status_code=400, detail="No active subscription")
     await db.users.update_one(
         {"user_id": user.user_id},
         {"$set": {"cancel_at_period_end": False, "subscription_status": "active"}},

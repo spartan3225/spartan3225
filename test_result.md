@@ -223,6 +223,34 @@ test_plan:
 agent_communication:
     -agent: "testing"
     -message: |
+      [2026-06-19] Post-Stripe-cleanup regression sweep
+      (see /app/regression_test.py).
+      All 13 assertions PASS against
+      https://wave-motion-ai.preview.emergentagent.com/api:
+        1. GET /api/health → 200.
+        2. GET /api/plans → exactly 4 plans
+           [free, learn, advanced, pro]; paid tiers all SAR
+           (free is usd@0.0, which is fine — no charge).
+        3. POST /api/payments/checkout → 410 Gone with the
+           "This payment endpoint is no longer supported" detail.
+        4. POST /api/payments/lemonsqueezy/checkout:
+             • learn/advanced/pro → 200 + real
+               surfcoach23.lemonsqueezy.com/checkout/... URL.
+             • bogus plan_id → 400 "Invalid plan".
+        5. GET /api/analyses/quota:
+             • demo free user → is_lifetime=True (tier=free, limit=1).
+             • demo coach user → is_lifetime=False (tier=coach, limit=-1).
+        6. POST /api/payments/cancel-renewal:
+             • free user → 400 "No active subscription".
+             • demo user temporarily promoted to tier='learn' →
+               200 with cancel_at_period_end=true. Restored to free
+               after test. Confirms PAID_TIERS now includes learn /
+               advanced / pro / coach (not just coach).
+      Demo sessions had expired (>7d) from the prior run; re-seeded
+      via the snippet in /app/memory/test_credentials.md before
+      executing. No regressions detected. Backend ready.
+    -agent: "testing"
+    -message: |
       Ran /app/backend_test.py against
       https://wave-motion-ai.preview.emergentagent.com/api.
       49 of 50 assertions passed; the only failing assertion is a

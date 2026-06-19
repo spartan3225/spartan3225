@@ -306,6 +306,24 @@ export default function ProfileScreen() {
             <Ionicons name="log-out-outline" size={18} color={colors.error} />
             <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
+
+          <View style={styles.legalLinksRow}>
+            <TouchableOpacity
+              onPress={() => router.push("/terms" as any)}
+              testID="profile-terms-link"
+            >
+              <Text style={styles.legalLink}>Terms</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
+            <TouchableOpacity
+              onPress={() => router.push("/privacy" as any)}
+              testID="profile-privacy-link"
+            >
+              <Text style={styles.legalLink}>Privacy</Text>
+            </TouchableOpacity>
+            <Text style={styles.legalDot}>·</Text>
+            <Text style={styles.legalLink}>v1.0</Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -527,4 +545,17 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "uppercase",
   },
+  legalLinksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: spacing.md,
+  },
+  legalLink: {
+    color: colors.textMuted,
+    fontSize: 11,
+    textDecorationLine: "underline",
+  },
+  legalDot: { color: colors.textMuted, fontSize: 11 },
 });

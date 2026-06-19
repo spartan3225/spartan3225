@@ -159,6 +159,21 @@ export default function LoginScreen() {
         <Text style={styles.legal}>
           Your video clips stay private to your account.
         </Text>
+        <View style={styles.legalLinksRow}>
+          <TouchableOpacity
+            onPress={() => router.push("/terms" as any)}
+            testID="login-terms-link"
+          >
+            <Text style={styles.legalLink}>Terms</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalDot}>·</Text>
+          <TouchableOpacity
+            onPress={() => router.push("/privacy" as any)}
+            testID="login-privacy-link"
+          >
+            <Text style={styles.legalLink}>Privacy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -274,6 +289,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: spacing.md,
   },
+  legalLinksRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 6,
+  },
+  legalLink: {
+    color: colors.textPrimary,
+    fontSize: 11,
+    textDecorationLine: "underline",
+    opacity: 0.7,
+  },
+  legalDot: { color: colors.textMuted, fontSize: 11 },
   heroFootRow: {
     flexDirection: "row",
     alignItems: "center",
