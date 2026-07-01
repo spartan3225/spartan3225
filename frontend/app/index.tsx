@@ -223,15 +223,14 @@ export default function LoginScreen() {
         <Text style={styles.sectionKicker}>PRICING</Text>
         <Text style={styles.sectionTitle}>Pick the plan that fits.</Text>
         <Text style={styles.sectionSubtitle}>
-          Prices in Saudi Riyal (SAR). Cancel anytime. Billed monthly through
-          LemonSqueezy.
+          Prices in US Dollars (USD). Cancel anytime. Billed monthly.
         </Text>
 
         <View style={styles.priceCard}>
           <View style={styles.priceHeader}>
             <Text style={styles.priceTier}>FREE</Text>
             <View>
-              <Text style={styles.priceAmount}>SAR 0</Text>
+              <Text style={styles.priceAmount}>$0</Text>
             </View>
           </View>
           <Text style={styles.priceBullet}>• 1 lifetime AI analysis</Text>
@@ -243,7 +242,7 @@ export default function LoginScreen() {
           <View style={styles.priceHeader}>
             <Text style={styles.priceTier}>LEARN</Text>
             <View>
-              <Text style={styles.priceAmount}>SAR 50</Text>
+              <Text style={styles.priceAmount}>$15</Text>
               <Text style={styles.pricePeriod}>/ month</Text>
             </View>
           </View>
@@ -259,7 +258,7 @@ export default function LoginScreen() {
           <View style={styles.priceHeader}>
             <Text style={styles.priceTier}>ADVANCED</Text>
             <View>
-              <Text style={styles.priceAmount}>SAR 80</Text>
+              <Text style={styles.priceAmount}>$25</Text>
               <Text style={styles.pricePeriod}>/ month</Text>
             </View>
           </View>
@@ -273,7 +272,7 @@ export default function LoginScreen() {
           <View style={styles.priceHeader}>
             <Text style={styles.priceTier}>PRO</Text>
             <View>
-              <Text style={styles.priceAmount}>SAR 110</Text>
+              <Text style={styles.priceAmount}>$35</Text>
               <Text style={styles.pricePeriod}>/ month</Text>
             </View>
           </View>

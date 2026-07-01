@@ -39,10 +39,10 @@ export default function TermsScreen() {
         </Section>
 
         <Section title="4. Subscriptions & Payments">
-          Paid plans (LEARN, Advanced, PRO) are billed monthly through
-          LemonSqueezy in Saudi Riyal (SAR). Subscriptions auto-renew until
-          cancelled. You can cancel renewal anytime from the Manage Plan screen
-          — your access stays active until the current period ends.
+          Paid plans (LEARN, Advanced, PRO) are billed monthly in
+          US Dollars (USD). Subscriptions auto-renew until cancelled.
+          You can cancel renewal anytime from the Manage Plan screen —
+          your access stays active until the current period ends.
           {"\n\n"}
           Free plan members receive one (1) AI analysis on a lifetime basis.
           Daily limits on paid plans reset at 00:00 UTC.
