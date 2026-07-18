@@ -50,7 +50,7 @@ export default function TermsScreen() {
 
         <Section title="5. Refunds">
           We offer a 7-day money-back guarantee on your first subscription
-          payment. Email coach1othman@gmail.com within 7 days of your first
+          payment. Email surfcoach23@gmail.com within 7 days of your first
           charge for a full refund. After the 7-day window, subscription
           fees are non-refundable except where required by law. You can
           cancel anytime to prevent future charges. Full details on the
@@ -94,7 +94,7 @@ export default function TermsScreen() {
         </Section>
 
         <Section title="12. Contact">
-          Questions? Email <Text style={styles.link}>coach1othman@gmail.com</Text>.
+          Questions? Email <Text style={styles.link}>surfcoach23@gmail.com</Text>.
         </Section>
 
         <View style={{ height: spacing.xxl }} />

@@ -334,7 +334,7 @@ export default function LoginScreen() {
           <Ionicons name="mail-outline" size={20} color={colors.primary} />
           <View style={{ marginLeft: 12, flex: 1 }}>
             <Text style={styles.contactLabel}>EMAIL</Text>
-            <Text style={styles.contactValue}>coach1othman@gmail.com</Text>
+            <Text style={styles.contactValue}>surfcoach23@gmail.com</Text>
           </View>
         </View>
 

@@ -64,7 +64,7 @@ export default function PrivacyScreen() {
         <Section title="Your rights">
           You can request a copy of your data, correction of inaccuracies, or
           deletion of your account & data at any time by emailing
-          {" "}<Text style={styles.link}>coach1othman@gmail.com</Text>.
+          {" "}<Text style={styles.link}>surfcoach23@gmail.com</Text>.
           We respond within 30 days.
         </Section>
 
@@ -89,7 +89,7 @@ export default function PrivacyScreen() {
         </Section>
 
         <Section title="Contact">
-          Email: <Text style={styles.link}>coach1othman@gmail.com</Text>
+          Email: <Text style={styles.link}>surfcoach23@gmail.com</Text>
         </Section>
 
         <View style={{ height: spacing.xxl }} />

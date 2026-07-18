@@ -36,7 +36,7 @@ export default function RefundScreen() {
         </Section>
 
         <Section title="How to request a refund">
-          Email <Text style={styles.link}>coach1othman@gmail.com</Text> within
+          Email <Text style={styles.link}>surfcoach23@gmail.com</Text> within
           7 days of your first charge with:
           {"\n"}• The email used to subscribe
           {"\n"}• The order/invoice number from LemonSqueezy
@@ -71,7 +71,7 @@ export default function RefundScreen() {
         </Section>
 
         <Section title="Contact">
-          Email: <Text style={styles.link}>coach1othman@gmail.com</Text>
+          Email: <Text style={styles.link}>surfcoach23@gmail.com</Text>
           {"\n"}Payment processor: LemonSqueezy (Merchant of Record)
         </Section>
 
