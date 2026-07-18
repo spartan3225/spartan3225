@@ -96,3 +96,10 @@ in test runs that Gemini 2.5 Pro outputs include these references.
 - Coach Elite: $120/mo — unlimited + coach directory
 
 Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses inline `price_data` so no manual Stripe Product/Price IDs are needed).
+
+## LemonSqueezy LIVE Mode Migration (June 2026)
+- Store approved by LemonSqueezy. Store currency USD, contact email surfcoach23@gmail.com.
+- Old email coach1othman@gmail.com replaced with surfcoach23@gmail.com in index.tsx, terms.tsx, privacy.tsx, refund.tsx.
+- Local backend/.env updated to LIVE: API key (live), TEST_MODE=false, variants LEARN=1922965, ADVANCED=1923062, PRO=1923852, webhook secret=surf2026webhook.
+- Verified: live API key valid, live checkout creation returns 201 (test_mode=false), /api/plans returns $15/$25/$35 USD.
+- PENDING USER ACTIONS: fix LEARN product price $16 -> $15 in LS dashboard; rename ELITE -> PRO (optional); create LIVE webhook (callback = live site + /api/webhook/lemonsqueezy, secret surf2026webhook); update deployed Secrets (API key, TEST MODE=false, 3 variant IDs) and Re-publish.
