@@ -103,3 +103,11 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - Local backend/.env updated to LIVE: API key (live), TEST_MODE=false, variants LEARN=1922965, ADVANCED=1923062, PRO=1923852, webhook secret=surf2026webhook.
 - Verified: live API key valid, live checkout creation returns 201 (test_mode=false), /api/plans returns $15/$25/$35 USD.
 - PENDING USER ACTIONS: fix LEARN product price $16 -> $15 in LS dashboard; rename ELITE -> PRO (optional); create LIVE webhook (callback = live site + /api/webhook/lemonsqueezy, secret surf2026webhook); update deployed Secrets (API key, TEST MODE=false, 3 variant IDs) and Re-publish.
+
+## Web serving fix (June 2026)
+- DISCOVERY: Emergent mobile deployments do NOT serve the Expo web frontend at the .emergent.host domain (only backend). Official support confirmed.
+- FIX: backend now serves the Expo web export. `npx expo export --platform web --output-dir /app/backend/static_web`; server.py catch-all GET route (after api_router) serves static files with SPA fallback. /api/* unaffected.
+- api.ts: on web BACKEND_URL = window.location.origin (native still uses EXPO_PUBLIC_BACKEND_URL).
+- LS_PLANS in routers/lemonsqueezy.py fixed from SAR 50/80/110 to USD 15/25/35 (payment_transactions records).
+- IMPORTANT: after any frontend change, RE-EXPORT the web build to /app/backend/static_web before re-publishing, or the deployed website will be stale.
+- Tested by testing_agent iteration_8: all pass (backend static serving, live checkout creation, email rebrand).
