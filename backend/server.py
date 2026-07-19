@@ -813,62 +813,6 @@ async def finalize_chunked_upload(
 async def _finalize_and_start_analysis(
     user: User, analysis_id: str, save_path: Path, ext: str, mime: str
 ) -> AnalysisOut:
-    user_dir = save_path.parent
-
-    # Auto-convert non-MP4 formats (especially iPhone .MOV with HEVC) to MP4
-    # so Gemini can reliably ingest them. Cheap and fast for short clips.
-    if ext != "mp4":
-        try:
-            mp4_path = user_dir / f"{analysis_id}.mp4"
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(save_path),
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "26",
-                "-c:a",
-                "aac",
-                "-movflags",
-                "+faststart",
-                "-loglevel",
-                "error",
-                str(mp4_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            try:
-                _, err = await asyncio.wait_for(proc.communicate(), timeout=120)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                logger.warning("ffmpeg timed out — using original file")
-                mp4_path = None
-            if mp4_path and mp4_path.exists() and mp4_path.stat().st_size > 0:
-                try:
-                    save_path.unlink()
-                except Exception:
-                    pass
-                save_path = mp4_path
-                mime = "video/mp4"
-                logger.info(
-                    "Converted %s -> mp4 for analysis_id=%s", ext, analysis_id
-                )
-            else:
-                logger.warning(
-                    "ffmpeg conversion failed for analysis_id=%s, err=%s",
-                    analysis_id,
-                    (err.decode("utf-8", "ignore") if err else "")[:200],
-                )
-        except FileNotFoundError:
-            logger.warning("ffmpeg not installed — skipping conversion")
-        except Exception as e:
-            logger.exception("ffmpeg conversion error: %s", e)
-
     doc = {
         "analysis_id": analysis_id,
         "user_id": user.user_id,
@@ -889,14 +833,16 @@ async def _finalize_and_start_analysis(
     }
     await db.analyses.insert_one(dict(doc))
 
-    # Kick off AI analysis in the background so this HTTP request returns
-    # quickly (Cloudflare proxy times out at ~100s).
+    # Kick off conversion + AI analysis in the background so this HTTP request
+    # returns instantly (Cloudflare proxy times out at ~100s, and ffmpeg can be
+    # slow on small deployment pods).
     asyncio.create_task(
         _run_analysis_in_background(
             analysis_id=analysis_id,
             save_path=save_path,
             mime=mime,
             deep=(user.tier == "coach"),
+            ext=ext,
         )
     )
 
@@ -907,13 +853,85 @@ async def _finalize_and_start_analysis(
     )
 
 
+async def _convert_to_mp4_if_needed(
+    analysis_id: str, save_path: Path, ext: str, mime: str
+) -> tuple[Path, str]:
+    """Convert non-MP4 clips (especially iPhone .MOV/HEVC) to MP4 for Gemini.
+
+    Runs in the background task — never inside an HTTP request — because
+    ffmpeg can take minutes on small deployment pods.
+    """
+    if ext == "mp4":
+        return save_path, mime
+    try:
+        mp4_path = save_path.parent / f"{analysis_id}.mp4"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(save_path),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "26",
+            "-threads",
+            "1",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            "-loglevel",
+            "error",
+            str(mp4_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, err = await asyncio.wait_for(proc.communicate(), timeout=600)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.communicate()
+            logger.warning("ffmpeg timed out — using original file")
+            return save_path, mime
+        if mp4_path.exists() and mp4_path.stat().st_size > 0:
+            try:
+                save_path.unlink()
+            except Exception:
+                pass
+            logger.info("Converted %s -> mp4 for analysis_id=%s", ext, analysis_id)
+            return mp4_path, "video/mp4"
+        logger.warning(
+            "ffmpeg conversion failed for analysis_id=%s, err=%s",
+            analysis_id,
+            (err.decode("utf-8", "ignore") if err else "")[:200],
+        )
+    except FileNotFoundError:
+        logger.warning("ffmpeg not installed — skipping conversion")
+    except Exception as e:
+        logger.exception("ffmpeg conversion error: %s", e)
+    return save_path, mime
+
+
 async def _run_analysis_in_background(
-    analysis_id: str, save_path: Path, mime: str, deep: bool
+    analysis_id: str, save_path: Path, mime: str, deep: bool, ext: str = "mp4"
 ) -> None:
-    """Run Gemini + Claude pipeline and update the analysis doc.
+    """Convert (if needed) then run Gemini + Claude pipeline and update the doc.
 
     Runs detached from the HTTP request so the proxy timeout doesn't matter.
     """
+    try:
+        save_path, mime = await _convert_to_mp4_if_needed(
+            analysis_id, save_path, ext, mime
+        )
+        await db.analyses.update_one(
+            {"analysis_id": analysis_id},
+            {"$set": {"video_path": str(save_path), "mime_type": mime}},
+        )
+    except Exception:
+        logger.exception("Background conversion step failed — using original file")
+
     try:
         result = await analyse_video_with_gemini(save_path, mime, deep=deep)
     except Exception as e:
