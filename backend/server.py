@@ -532,7 +532,7 @@ async def analyse_video_with_gemini(
 
     draft: dict | None = None
     last_error: Exception | None = None
-    for model_name in ("gemini-2.5-pro", "gemini-2.0-flash"):
+    for model_name in ("gemini-2.5-pro", "gemini-2.5-flash"):
         try:
             chat = LlmChat(
                 api_key=EMERGENT_LLM_KEY,
