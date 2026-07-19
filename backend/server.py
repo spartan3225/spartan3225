@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Request, Body
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Request, Body, Form
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -8,6 +8,7 @@ import logging
 import uuid
 import json
 import re
+import base64
 import shutil
 import asyncio
 from pathlib import Path
@@ -670,14 +671,12 @@ def _coerce_str_list(items) -> List[str]:
     return out
 
 
-@api_router.post("/analyses", response_model=AnalysisOut)
-async def create_analysis(
-    file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
-):
-    # Enforce limit by tier.
-    # Free tier: lifetime cap. Paid tiers: per-day cap.
-    # Exclude failed analyses so AI errors don't burn the user's quota.
+async def _check_analysis_quota(user: User) -> None:
+    """Enforce analysis limits by tier.
+
+    Free tier: lifetime cap. Paid tiers: per-day cap.
+    Excludes failed analyses so AI errors don't burn the user's quota.
+    """
     if user.tier == "free":
         used_total = await db.analyses.count_documents(
             {"user_id": user.user_id, "status": {"$ne": "failed"}}
@@ -710,6 +709,14 @@ async def create_analysis(
                     detail=f"{tier_label} plan limit of {limit} {'analyses' if limit != 1 else 'analysis'} per day reached. Upgrade for more.",
                 )
 
+
+@api_router.post("/analyses", response_model=AnalysisOut)
+async def create_analysis(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+):
+    await _check_analysis_quota(user)
+
     analysis_id = f"ana_{uuid.uuid4().hex[:14]}"
     ext = (file.filename or "video.mp4").split(".")[-1].lower()
     if ext not in {"mp4", "mov", "m4v", "webm", "avi"}:
@@ -722,6 +729,91 @@ async def create_analysis(
         shutil.copyfileobj(file.file, f)
 
     mime = file.content_type or "video/mp4"
+    return await _finalize_and_start_analysis(user, analysis_id, save_path, ext, mime)
+
+
+# ---- Chunked upload (bypasses proxy body-size/timeout limits for big clips) ----
+CHUNKS_DIR = ROOT_DIR / "uploads" / "chunks"
+_UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{16,64}$")
+
+
+@api_router.post("/uploads/chunk")
+async def upload_chunk(
+    upload_id: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    file: Optional[UploadFile] = File(None),
+    chunk_b64: Optional[str] = Form(None),
+    user: User = Depends(get_current_user),
+):
+    if not _UPLOAD_ID_RE.match(upload_id):
+        raise HTTPException(status_code=400, detail="Invalid upload_id")
+    if total_chunks < 1 or total_chunks > 500 or not (0 <= chunk_index < total_chunks):
+        raise HTTPException(status_code=400, detail="Invalid chunk index")
+    if file is not None:
+        data = await file.read()
+    elif chunk_b64:
+        try:
+            data = base64.b64decode(chunk_b64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 chunk")
+    else:
+        raise HTTPException(status_code=400, detail="No chunk data")
+
+    chunk_dir = CHUNKS_DIR / user.user_id / upload_id
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    (chunk_dir / f"{chunk_index:05d}.part").write_bytes(data)
+    received = len(list(chunk_dir.glob("*.part")))
+    return {"received": received, "total": total_chunks}
+
+
+class FinalizeUploadIn(BaseModel):
+    upload_id: str
+    filename: str = "video.mp4"
+    mime_type: str = "video/mp4"
+    total_chunks: int
+
+
+@api_router.post("/analyses/finalize", response_model=AnalysisOut)
+async def finalize_chunked_upload(
+    payload: FinalizeUploadIn,
+    user: User = Depends(get_current_user),
+):
+    if not _UPLOAD_ID_RE.match(payload.upload_id):
+        raise HTTPException(status_code=400, detail="Invalid upload_id")
+    chunk_dir = CHUNKS_DIR / user.user_id / payload.upload_id
+    if not chunk_dir.is_dir():
+        raise HTTPException(status_code=400, detail="Upload not found")
+    parts = sorted(chunk_dir.glob("*.part"))
+    if len(parts) != payload.total_chunks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Upload incomplete: {len(parts)}/{payload.total_chunks} chunks received",
+        )
+
+    await _check_analysis_quota(user)
+
+    analysis_id = f"ana_{uuid.uuid4().hex[:14]}"
+    ext = (payload.filename or "video.mp4").split(".")[-1].lower()
+    if ext not in {"mp4", "mov", "m4v", "webm", "avi"}:
+        ext = "mp4"
+    user_dir = UPLOAD_DIR / user.user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    save_path = user_dir / f"{analysis_id}.{ext}"
+
+    with save_path.open("wb") as out:
+        for part in parts:
+            out.write(part.read_bytes())
+    shutil.rmtree(chunk_dir, ignore_errors=True)
+
+    mime = payload.mime_type or "video/mp4"
+    return await _finalize_and_start_analysis(user, analysis_id, save_path, ext, mime)
+
+
+async def _finalize_and_start_analysis(
+    user: User, analysis_id: str, save_path: Path, ext: str, mime: str
+) -> AnalysisOut:
+    user_dir = save_path.parent
 
     # Auto-convert non-MP4 formats (especially iPhone .MOV with HEVC) to MP4
     # so Gemini can reliably ingest them. Cheap and fast for short clips.

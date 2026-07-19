@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 
 // On web, always call the API on the same domain the site is served from
 // (works on preview AND on the deployed .emergent.host domain).
@@ -139,22 +140,86 @@ export async function logout(): Promise<void> {
   await clearToken();
 }
 
-export async function uploadVideo(uri: string, name: string, mimeType: string) {
+const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB — safely under proxy body limits
+
+function makeUploadId(): string {
+  return (
+    Date.now().toString(16) +
+    Math.random().toString(16).slice(2) +
+    Math.random().toString(16).slice(2)
+  ).slice(0, 32);
+}
+
+async function postFormWithRetry(
+  url: string,
+  buildForm: () => FormData,
+  headers: Record<string, string>,
+  attempts = 3
+): Promise<Response> {
+  let lastErr: any = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: buildForm() as any,
+      });
+      if (res.ok) return res;
+      // Don't retry on client errors (auth/quota/etc.)
+      if (res.status < 500 && res.status !== 429) return res;
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+  }
+  throw lastErr || new Error("Chunk upload failed");
+}
+
+async function finalizeChunkedUpload(
+  uploadId: string,
+  name: string,
+  mimeType: string,
+  totalChunks: number,
+  token: string | null
+): Promise<Analysis> {
+  const res = await fetch(`${API_URL}/analyses/finalize`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      upload_id: uploadId,
+      filename: name,
+      mime_type: mimeType,
+      total_chunks: totalChunks,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Upload failed: ${res.status} ${text}`);
+  }
+  return (await res.json()) as Analysis;
+}
+
+export async function uploadVideo(
+  uri: string,
+  name: string,
+  mimeType: string,
+  onProgress?: (pct: number) => void
+) {
   const token = await getToken();
-  const form = new FormData();
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
 
   if (Platform.OS === "web") {
     // On web, FormData needs a real File/Blob. Fetch the picked URI and convert.
+    let blob: Blob;
     try {
       const blobRes = await fetch(uri);
-      const blob = await blobRes.blob();
-      const finalType = blob.type || mimeType || "video/mp4";
-      // Use File when available so browsers send filename properly
-      const fileObj =
-        typeof File !== "undefined"
-          ? new File([blob], name, { type: finalType })
-          : blob;
-      form.append("file", fileObj as any, name);
+      blob = await blobRes.blob();
     } catch (e) {
       throw new Error(
         `Could not read selected video on web. Please try again or use the mobile app. (${
@@ -162,22 +227,132 @@ export async function uploadVideo(uri: string, name: string, mimeType: string) {
         })`
       );
     }
-  } else {
-    // RN native: file as { uri, name, type }
-    // @ts-ignore - React Native FormData accepts this shape natively
-    form.append("file", { uri, name, type: mimeType });
+    const finalType = blob.type || mimeType || "video/mp4";
+
+    // Small clip: single request (fast path)
+    if (blob.size <= CHUNK_SIZE) {
+      const form = new FormData();
+      const fileObj =
+        typeof File !== "undefined"
+          ? new File([blob], name, { type: finalType })
+          : blob;
+      form.append("file", fileObj as any, name);
+      onProgress?.(10);
+      const res = await fetch(`${API_URL}/analyses`, {
+        method: "POST",
+        headers: authHeaders,
+        body: form as any,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Upload failed: ${res.status} ${text}`);
+      }
+      onProgress?.(100);
+      return (await res.json()) as Analysis;
+    }
+
+    // Big clip: upload in chunks to bypass proxy limits
+    const uploadId = makeUploadId();
+    const total = Math.ceil(blob.size / CHUNK_SIZE);
+    for (let i = 0; i < total; i++) {
+      const part = blob.slice(
+        i * CHUNK_SIZE,
+        Math.min((i + 1) * CHUNK_SIZE, blob.size),
+        finalType
+      );
+      const res = await postFormWithRetry(
+        `${API_URL}/uploads/chunk`,
+        () => {
+          const form = new FormData();
+          form.append("upload_id", uploadId);
+          form.append("chunk_index", String(i));
+          form.append("total_chunks", String(total));
+          form.append("file", part as any, `${name}.part${i}`);
+          return form;
+        },
+        authHeaders
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Upload failed: ${res.status} ${text}`);
+      }
+      onProgress?.(Math.round(((i + 1) / total) * 95));
+    }
+    const result = await finalizeChunkedUpload(
+      uploadId,
+      name,
+      finalType,
+      total,
+      token
+    );
+    onProgress?.(100);
+    return result;
   }
 
-  const res = await fetch(`${API_URL}/analyses`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form as any,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Upload failed: ${res.status} ${text}`);
+  // ---- Native (iOS/Android) ----
+  let size = 0;
+  try {
+    const info = await FileSystem.getInfoAsync(uri, { size: true } as any);
+    size = (info as any)?.size || 0;
+  } catch {
+    size = 0;
   }
-  return (await res.json()) as Analysis;
+
+  // Small clip (or unknown size): single multipart request
+  if (!size || size <= CHUNK_SIZE) {
+    const form = new FormData();
+    // @ts-ignore - React Native FormData accepts this shape natively
+    form.append("file", { uri, name, type: mimeType });
+    onProgress?.(10);
+    const res = await fetch(`${API_URL}/analyses`, {
+      method: "POST",
+      headers: authHeaders,
+      body: form as any,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Upload failed: ${res.status} ${text}`);
+    }
+    onProgress?.(100);
+    return (await res.json()) as Analysis;
+  }
+
+  // Big clip: read base64 chunks from disk and upload sequentially
+  const uploadId = makeUploadId();
+  const total = Math.ceil(size / CHUNK_SIZE);
+  for (let i = 0; i < total; i++) {
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+      position: i * CHUNK_SIZE,
+      length: Math.min(CHUNK_SIZE, size - i * CHUNK_SIZE),
+    });
+    const res = await postFormWithRetry(
+      `${API_URL}/uploads/chunk`,
+      () => {
+        const form = new FormData();
+        form.append("upload_id", uploadId);
+        form.append("chunk_index", String(i));
+        form.append("total_chunks", String(total));
+        form.append("chunk_b64", b64);
+        return form;
+      },
+      authHeaders
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Upload failed: ${res.status} ${text}`);
+    }
+    onProgress?.(Math.round(((i + 1) / total) * 95));
+  }
+  const result = await finalizeChunkedUpload(
+    uploadId,
+    name,
+    mimeType || "video/mp4",
+    total,
+    token
+  );
+  onProgress?.(100);
+  return result;
 }
 
 export function getVideoStreamUrl(analysisId: string, token: string) {

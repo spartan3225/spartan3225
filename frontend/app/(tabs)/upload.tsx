@@ -28,6 +28,7 @@ export default function UploadScreen() {
   const router = useRouter();
   const [asset, setAsset] = useState<PickedAsset | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const player = useVideoPlayer(asset?.uri || null, (p) => {
@@ -89,6 +90,7 @@ export default function UploadScreen() {
   const submit = async () => {
     if (!asset) return;
     setSubmitting(true);
+    setProgress(0);
     setError(null);
     try {
       const name =
@@ -97,7 +99,8 @@ export default function UploadScreen() {
       const result = await uploadVideo(
         asset.uri,
         name,
-        asset.mimeType || "video/mp4"
+        asset.mimeType || "video/mp4",
+        (pct) => setProgress(pct)
       );
       router.replace(`/analysis/${result.analysis_id}` as any);
     } catch (e: any) {
@@ -152,9 +155,15 @@ export default function UploadScreen() {
           {submitting && (
             <View style={styles.loadingOverlay} testID="analysis-loading">
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>AI COACH ANALYSING...</Text>
+              <Text style={styles.loadingText}>
+                {progress < 100
+                  ? `UPLOADING... ${progress}%`
+                  : "AI COACH ANALYSING..."}
+              </Text>
               <Text style={styles.loadingSub}>
-                Reading every frame. This usually takes 20–60 seconds.
+                {progress < 100
+                  ? "Sending your clip in small pieces — keep the app open."
+                  : "Reading every frame. This usually takes 20–60 seconds."}
               </Text>
             </View>
           )}

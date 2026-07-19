@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 9 — chunked-upload fix (Cloudflare 520 bug) fully validated end-to-end. Backend: 9/9 tests PASS in test_chunked_upload.py — happy path (3x3MB chunks -> finalize -> AnalysisOut with status=processing, assembled file present at uploads/videos/<user_id>/<analysis_id>.mp4, chunk dir deleted), chunk_b64 variant, all 5 validation cases (path-traversal upload_id, wrong charset, unauth 401, unknown upload_id, incomplete chunks), legacy /api/analyses regression, and free-tier quota returning 402 on finalize. Frontend: file-picker automation on the preview URL selected an 8MB fake mp4, tapped Analyse Surf Technique, the UPLOADING... % overlay appeared with 'Sending your clip in small pieces' subtitle, no red 'Upload failed: 520' error, and app navigated to /analysis/ana_8e9cf7050b2947 successfully. Web bundle at /app/backend/static_web contains the /uploads/chunk and /analyses/finalize logic. All test-created analyses + files cleaned up.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/uploads/chunk", "issue": "No server-side per-user cap on number of concurrent upload_id chunk directories or on cumulative chunk bytes on disk. A malicious authenticated user could DoS disk by opening many upload_ids and uploading up to 500*chunk_size bytes each without ever finalizing. Consider janitor task to purge chunk dirs older than N hours + per-user cap. Not blocking."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-image-picker", "issue": "Console warning: 'ImagePicker.MediaTypeOptions have been deprecated. Use ImagePicker.MediaType or an array of ImagePicker.MediaType instead.' Reference: /app/frontend/app/(tabs)/upload.tsx:52 (mediaTypes: ImagePicker.MediaTypeOptions.Videos)"},
+      {"component": "Image", "issue": "Repeat of iteration 8: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' still emitted on the shipped web bundle — the exported /app/backend/static_web was regenerated for this iteration but this warning was not addressed."},
+      {"component": "expo-notifications (web)", "issue": "Repeat of iteration 8: 'Listening to push token changes is not yet fully supported on web' still fires on landing/upload — should guard listener with Platform.OS !== 'web'."},
+      {"component": "View / pointerEvents", "issue": "New warning: 'props.pointerEvents is deprecated. Use style.pointerEvents' — grep the codebase for pointerEvents= prop usage and move to StyleSheet."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_chunked_upload.py",
+    "/app/test_reports/pytest/iteration_9_chunked.xml"
+  ],
+  "action_items": [
+    "(Optional) Migrate ImagePicker.MediaTypeOptions.Videos -> ImagePicker.MediaType.Videos (or [ImagePicker.MediaType.Videos]) in /app/frontend/app/(tabs)/upload.tsx:52 to silence the deprecation.",
+    "(Optional) Add a background janitor to purge /app/backend/uploads/chunks/*/* dirs older than ~2h so abandoned chunked uploads don't accumulate.",
+    "(Carry-over from iter 8) Move Image resizeMode from StyleSheet into <Image resizeMode=...> prop; guard expo-notifications addPushTokenListener with Platform.OS !== 'web'; re-export web build.",
+    "(Carry-over from iter 8, still true) routers/lemonsqueezy.py LS_PLANS SAR pricing vs server.py PLANS USD pricing mismatch — reconcile.",
+    "Grep + fix 'pointerEvents=' prop usages -> move to style.pointerEvents."
+  ],
+  "critical_code_review_comments": [
+    "server.py:_UPLOAD_ID_RE (^[a-f0-9]{16,64}$) is a strong path-traversal guard, and CHUNKS_DIR path is composed by joining user_id (server-controlled from auth) + upload_id (regex-validated). Safe.",
+    "server.py:upload_chunk validates chunk_index bounds (0<=i<total, total<=500). Good.",
+    "server.py:finalize_chunked_upload asserts len(parts) == total_chunks by counting *.part files in the dir — this could pass even if the user replayed the same chunk_index (previous PUT overwrites the file, so count stays right). Not a security issue since data integrity for a fake video only affects the uploading user's own analysis, but worth noting.",
+    "api.ts:makeUploadId() concatenates Date.now().toString(16) + two Math.random().toString(16).slice(2) truncated to 32 chars — all outputs are 0-9a-f, matches the server regex. Good.",
+    "api.ts:postFormWithRetry retries up to 3x with 1s/2s/3s backoff on network err or 5xx/429 — matches the requested behavior. Client-side 4xx short-circuits, preventing wasted retries on auth/quota failures.",
+    "api.ts chunk size 3MB (CHUNK_SIZE = 3*1024*1024) — safely under typical Cloudflare 100MB and any 6-10MB proxy body limits.",
+    "server.py file grew to 1594 lines; still worth splitting into routers/ modules (carry-over)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_chunked_upload.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (upload screen renders, picker works, chunked upload finalizes, navigation to /analysis/<id> succeeds, no CF-520 error)"},
+  "seed_data_creation": "Re-seeded user_sessions doc for 'demo_coach_token' (user_coach_67890) with a fresh 7-day expiry via mongosh (test_database) — the previous seed had expired. 'demo_token_active' was still valid.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Chunked upload endpoints: POST /api/uploads/chunk (multipart Form: upload_id [^[a-f0-9]{16,64}$], chunk_index, total_chunks, plus either 'file' UploadFile or 'chunk_b64' Form text) and POST /api/analyses/finalize (JSON: upload_id, filename, mime_type, total_chunks) — both require Bearer auth. Chunks land in /app/backend/uploads/chunks/<user_id>/<upload_id>/; assembled files in /app/backend/uploads/videos/<user_id>/. Legacy POST /api/analyses (multipart 'file') is unchanged and still handles <=3MB files. FE uses CHUNK_SIZE=3MB, chunks only when Blob.size>CHUNK_SIZE on web or FileSystem.getInfoAsync size>CHUNK_SIZE on native. demo_coach_token expires 2026-07-26.",
+  "rca_of_issue": "Original bug: single POST /api/analyses of large videos hit Cloudflare edge before backend, returning 520 'Web server returned unknown error' because body/timeout exceeded proxy limits. Fix (verified this iteration): frontend now slices >3MB videos into 3MB chunks, POSTs each chunk to /api/uploads/chunk (small enough to always sail past the proxy) with retry on 5xx/network, then calls /api/analyses/finalize to reassemble server-side and kick off the normal ffmpeg+AI pipeline. Backend endpoints enforce upload_id regex, chunk-index bounds, quota, and cleanup. Reproduction & verification: uploaded an 8MB fake mp4 through the preview URL upload tab; UPLOADING... % overlay was shown and app navigated to /analysis/<id> with no 520 error."
+}
