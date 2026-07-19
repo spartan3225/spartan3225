@@ -1456,6 +1456,32 @@ except Exception as _e:  # pragma: no cover
 
 app.include_router(api_router)
 
+# ---- Serve the exported Expo web build (landing, terms, privacy, refund) ----
+# On mobile deployments only the backend is exposed publicly, so the backend
+# serves the static web export at the root path. Generated via:
+#   npx expo export --platform web --output-dir /app/backend/static_web
+STATIC_WEB_DIR = ROOT_DIR / "static_web"
+
+if STATIC_WEB_DIR.is_dir():
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_web_app(full_path: str):
+        if full_path.startswith("api/") or full_path == "api":
+            raise HTTPException(status_code=404, detail="Not Found")
+        base = STATIC_WEB_DIR.resolve()
+        target = (base / full_path).resolve() if full_path else base / "index.html"
+        try:
+            target.relative_to(base)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Not Found")
+        if full_path and target.is_file():
+            return FileResponse(target)
+        html = (base / f"{full_path}.html") if full_path else (base / "index.html")
+        if html.is_file():
+            return FileResponse(html)
+        # SPA fallback: let expo-router handle the route client-side
+        return FileResponse(base / "index.html")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

@@ -1,7 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+// On web, always call the API on the same domain the site is served from
+// (works on preview AND on the deployed .emergent.host domain).
+// On native (iOS/Android), use the configured backend URL.
+const BACKEND_URL =
+  Platform.OS === "web" && typeof window !== "undefined"
+    ? window.location.origin
+    : process.env.EXPO_PUBLIC_BACKEND_URL;
 export const API_URL = `${BACKEND_URL}/api`;
 
 const TOKEN_KEY = "session_token";

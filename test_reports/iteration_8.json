@@ -1,0 +1,40 @@
+{
+  "summary": "Validated SurfCoach23 backend-served Expo web build + LemonSqueezy LIVE mode + email rebrand. 14/14 backend tests PASS (test_static_web_and_ls_live.py). Landing + /terms + /privacy + /refund all render with $15/$25/$35 pricing and surfcoach23@gmail.com (old coach1othman@gmail.com is gone). /api/plans returns provider=lemonsqueezy with correct USD amounts. LIVE-mode checkout for plan=learn returns a real surfcoach23.lemonsqueezy.com URL (no payment completed). Invalid plan -> 400, webhook without signature -> 400. SPA fallback + JS bundle serving verified via localhost:8001 (deployed domain routing). No blocking issues.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Image", "issue": "Deprecation warning: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' — flagged on landing/terms/privacy/refund web bundle. Move resizeMode out of StyleSheet into the <Image> prop across the app."},
+      {"component": "expo-notifications (web)", "issue": "Console warning: 'Listening to push token changes is not yet fully supported on web. Adding a listener will have no effect.' — guard the addPushTokenListener call with Platform.OS !== 'web' so the web landing bundle doesn't emit this warning."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_static_web_and_ls_live.py",
+    "/app/test_reports/pytest/iteration_8_results.xml"
+  ],
+  "action_items": [
+    "Optional: refresh the exported web build (npx expo export --platform web) after fixing the Image resizeMode deprecation so the shipped landing bundle is warning-free.",
+    "Optional: wrap expo-notifications addPushTokenListener registration with Platform.OS !== 'web' to eliminate repeated web console warnings.",
+    "Note: demo_token_active session had expired in Mongo; re-seeded per /app/memory/test_credentials.md. Consider a startup seed job so the fixture stays green between iterations."
+  ],
+  "critical_code_review_comments": [
+    "server.py: catch-all serve_web_app correctly excludes /api/* and uses path-traversal guard (relative_to base). Good.",
+    "server.py: SPA fallback returns index.html for any missing route with 200. Consider returning 404 for genuine 404s (e.g. missing .js assets under /_expo/) so the browser doesn't try to execute HTML as JS. Not currently breaking since Expo generated all referenced bundles, but a real 404 asset would silently serve HTML.",
+    "routers/lemonsqueezy.py LS_PLANS still lists SAR pricing (50/80/110) internally while /api/plans (server.py PLANS) reports USD $15/$25/$35. The stored payment_transactions.amount will therefore be 50/80/110 SAR while the actual LemonSqueezy variant charges USD — this is a data-integrity mismatch. Reconcile LS_PLANS amounts+currency with PLANS.",
+    "server.py exceeds 1500 lines; consider splitting analyses, coach, payments into routers/ modules for maintainability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_static_web_and_ls_live.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all target flows verified)"},
+  "seed_data_creation": "Re-seeded/refreshed user_sessions doc for token 'demo_token_active' (user_demo_12345) with a fresh 7-day expiry via mongosh (test_database).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend serves Expo web export from /app/backend/static_web via catch-all in server.py (after api_router). Preview URL root is Expo dev server, NOT backend — use http://localhost:8001 to replicate the deployed .emergent.host routing. LemonSqueezy is LIVE (TEST_MODE=false); creating checkouts is safe but do NOT complete payments. Demo token 'demo_token_active' expires 7 days from re-seed 2026-07-19.",
+  "rca_of_issue": "Original bug: deployed .emergent.host root returned 404 because backend had no root handler. Fix: (1) exported Expo web build to /app/backend/static_web, (2) added FastAPI catch-all GET route AFTER api_router that serves static files and falls back to index.html for SPA routes, (3) api.ts changed to window.location.origin on web so bundled site calls the same origin. All three verified working."
+}
