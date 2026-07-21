@@ -1,0 +1,53 @@
+{
+  "summary": "Iteration 11 — Mongo-backed chunked upload + GridFS video persistence/streaming fallback FULLY VERIFIED. 11/11 backend tests PASS in 12.85s (new file /app/backend/tests/test_mongo_chunks_gridfs_iter11.py). Verified: (1) POST /api/uploads/chunk stores chunks as binary in db.upload_chunks with exact 3MB size preserved, cumulative 'received' count is correct across 3 chunks including a chunk_b64 base64 variant; (2) POST /api/analyses/finalize counts+reads chunks from Mongo in chunk_index order, assembled local file size == exact sum of chunk bytes (9,437,184 bytes for the 3x3MB happy path), and all upload_chunks docs for that upload_id are deleted after finalize; (3) Retry/idempotency: uploading the same chunk_index twice does NOT double-count (received stays at 1 after 2 POSTs of index 0), the SECOND payload (BBBB) overwrites the first (AAAA) as expected from the upsert; (4) Validations return correct 400/401: unknown upload_id -> 400 'Upload not found', incomplete 2 of 3 -> 400 'Upload incomplete: 2/3 chunks received', bad upload_id ('../evil') -> 400, unauth -> 401; (5) GridFS fallback: after finalize (.mp4, no ffmpeg conversion needed), db.videos.files gets a filename=<analysis_id> entry with length equal to the payload size within ~9s; renaming the local file to .hidden and hitting GET /api/analyses/{id}/video?token=demo_coach_token returns 200 with BYTE-IDENTICAL content streamed from GridFS; missing token still returns 401; (6) TTL index on upload_chunks.created_at with expireAfterSeconds=86400 and unique compound index on (user_id, upload_id, chunk_index) both present; (7) Regressions green: legacy POST /api/analyses returns 200 processing in <10s, /api/plans returns 200, / serves HTML.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "internal analyse_video_with_gemini (server.py:~535)",
+        "issue": "Carry-over from iter 10 — model fallback list still contains 'gemini-2.0-flash' which returns HTTP 404 'no longer available' from Google. Real user uploads will still land in status=failed unless gemini-2.5-pro succeeds first. Not blocking this iteration's multi-replica fix, but blocks end-to-end user success."
+      },
+      {
+        "endpoint": "POST /api/analyses/finalize (server.py:823-826)",
+        "issue": "Assembly reads each chunk doc into memory via db.upload_chunks.find(query).sort('chunk_index', 1) and writes to disk in-order. Motor loads each document fully (each chunk is up to 16MB by BSON limit; frontend uses 3MB so safe today). Fine for current 3MB frontend chunk size but keep this in mind if chunk size is ever bumped."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_mongo_chunks_gridfs_iter11.py",
+    "/app/test_reports/pytest/iteration_11_mongo_chunks_gridfs.xml"
+  ],
+  "action_items": [
+    "(Carry-over from iter 10) Replace 'gemini-2.0-flash' in server.py fallback tuple with a supported model (e.g. 'gemini-2.5-flash' or 'gemini-1.5-flash-latest') — otherwise real user uploads keep landing in status=failed.",
+    "(Deploy note) The seeded user_coach_67890 record in production/preview Mongo had drifted to tier='free' subscription_status='expired' before this run. I re-seeded it to tier='coach' active-30d so the tests could exercise unlimited-quota flows. If test_credentials.md is the source of truth, add an idempotent 'restore active coach subscription' step to the seed snippet so subsequent iterations don't need manual fix-up.",
+    "(Optional, iter 9/10 carry-over) Background janitor for /app/backend/uploads/chunks/*/* and any orphaned assembled files; Mongo TTL handles upload_chunks docs but not on-disk chunk directories that were created and then abandoned before finalize."
+  ],
+  "critical_code_review_comments": [
+    "server.py:upload_chunk (745-786) — replace_one upsert on (user_id, upload_id, chunk_index) makes the endpoint idempotent by design; unique compound index enforces the invariant even under a race. Verified in test_reupload_same_chunk_index_no_double_count.",
+    "server.py:finalize_chunked_upload (796-830) — counts from Mongo, asserts received == total_chunks, reads sorted by chunk_index, writes to local file, deletes chunks. Correct multi-replica-safe design: any replica can finalize because storage is shared. Verified assembled bytes == sum of chunk bytes AND ordering (first bytes of chunk 0 match the retry, first bytes of chunk 1 match c1).",
+    "server.py:_store_video_in_gridfs (937-951) — deletes any pre-existing videos.files entry with the same filename before uploading (idempotent) and swallows exceptions with logger.exception so a GridFS failure does not crash the bg task. Verified videos.files entry created with correct length within ~9s of finalize.",
+    "server.py:get_analysis_video (1038-1074) — path check + FileResponse for the local-file happy path, then a try/except open_download_stream_by_name('videos', filename=analysis_id) fallback that streams chunks lazily. Fallback verified byte-identical to the uploaded payload.",
+    "server.py:_ensure_indexes (1664-1677) — TTL 86400s on created_at plus unique compound (user_id, upload_id, chunk_index). Both present, both verified.",
+    "server.py — 1683 lines. Carry-over from iter 9/10: should be split into routers/uploads.py, routers/analyses.py, routers/payments.py etc.",
+    "server.py:851 — the AnalysisOut return path uses find_one({...}, {'_id': 0}) so Mongo ObjectId never leaks. Good.",
+    "GridFS TTL: there is no expiry on videos.files/videos.chunks. If users upload heavy clips, disk usage inside Mongo will grow unbounded. Consider a retention policy or per-user cap. Not blocking for this fix."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_mongo_chunks_gridfs_iter11.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11)",
+    "frontend": "not tested this iteration (per review_request 'backend only')"
+  },
+  "seed_data_creation": "Restored user_coach_67890 to tier='coach' with subscription_status='active' and subscription_expires_at=+30d (had drifted to 'free'/'expired' in the DB before the run). No other seed data was added; all test analyses, local files, GridFS videos.files/videos.chunks entries, and upload_chunks docs were cleaned up in each test's teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The multi-replica bugfix (Mongo-backed chunks + GridFS video persistence + GridFS streaming fallback in GET /api/analyses/{id}/video) is fully verified via /app/backend/tests/test_mongo_chunks_gridfs_iter11.py. Rerun as regression at any time. Key facts: chunks live in db.upload_chunks (fields: user_id, upload_id, chunk_index, data:BinData, created_at); TTL 24h; unique compound (user_id, upload_id, chunk_index); GridFS bucket 'videos' with filename=<analysis_id>. FE unchanged. Known stale finding (iter 10 carry-over): gemini-2.0-flash is 404-deprecated at Google; server.py fallback list should be updated. IMPORTANT: seeded coach user in preview Mongo can revert to tier=free/expired between runs — re-run the coach re-seed from /app/memory/test_credentials.md (with tier:'coach', subscription_status:'active') before running upload/finalize tests, or the finalize step will 402 on quota.",
+  "rca_of_issue": "Original bug: 'Upload failed: 400 {detail: Upload incomplete: 8/9 chunks received}' on the deployed site (2 replicas behind a load balancer). RCA: chunks were written to LOCAL POD DISK inside /app/backend/uploads/chunks/<user_id>/<upload_id>/ — with 2 replicas, chunks split across pods and finalize on any single replica only saw its own pod's slice, never all 9. Same class of bug also affected GET /api/analyses/{id}/video: the video was written to local disk by whichever pod handled finalize, and other pods returned 404 'Video file missing'. Fix (verified iter 11): (a) chunks moved to db.upload_chunks with replace_one upsert on (user_id, upload_id, chunk_index) so any replica writes to the same shared store; received count is now count_documents in Mongo. (b) finalize reads all chunk docs sorted by chunk_index from Mongo, assembles local file, deletes chunk docs. (c) videos are additionally persisted to GridFS bucket 'videos' with filename=analysis_id in the background task, and GET /video falls back to streaming from GridFS when the local file is missing (other-replica case). (d) startup ensures TTL 86400s on created_at + unique compound index so retries are safe and orphaned uploads auto-expire. Reproduction of the fix: uploaded 3x3MB chunks (one via chunk_b64), verified BinData docs in db.upload_chunks with size==3MB each and correct chunk_index; finalized -> assembled file bytes == 9437184 == sum of chunks; retried chunk_index=0 twice -> received count stayed at 1 (upsert working); manually renamed the local video file away and confirmed GET /video?token=... returned the same bytes from GridFS. Mitigation for future: keep this test file in CI and monitor the 'GridFS store failed for %s' logger.exception line for silent failures."
+}

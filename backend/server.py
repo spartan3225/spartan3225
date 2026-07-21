@@ -1,8 +1,8 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Header, Request, Body, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 import os
 import logging
 import uuid
@@ -31,6 +31,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
+# GridFS bucket for video storage — shared across all deployment replicas
+# (local pod disk is NOT shared when the app runs with >1 replica).
+gridfs_videos = AsyncIOMotorGridFSBucket(db, bucket_name="videos")
 
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 # Prefer real Stripe secret key when provided; fall back to legacy proxy key
@@ -733,7 +736,9 @@ async def create_analysis(
 
 
 # ---- Chunked upload (bypasses proxy body-size/timeout limits for big clips) ----
-CHUNKS_DIR = ROOT_DIR / "uploads" / "chunks"
+# Chunks are stored in MongoDB (NOT local disk) because the deployed app runs
+# multiple replicas behind a load balancer — each request can land on a
+# different pod, so local disk is not shared.
 _UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{16,64}$")
 
 
@@ -760,10 +765,24 @@ async def upload_chunk(
     else:
         raise HTTPException(status_code=400, detail="No chunk data")
 
-    chunk_dir = CHUNKS_DIR / user.user_id / upload_id
-    chunk_dir.mkdir(parents=True, exist_ok=True)
-    (chunk_dir / f"{chunk_index:05d}.part").write_bytes(data)
-    received = len(list(chunk_dir.glob("*.part")))
+    await db.upload_chunks.replace_one(
+        {
+            "user_id": user.user_id,
+            "upload_id": upload_id,
+            "chunk_index": chunk_index,
+        },
+        {
+            "user_id": user.user_id,
+            "upload_id": upload_id,
+            "chunk_index": chunk_index,
+            "data": data,
+            "created_at": datetime.now(timezone.utc),
+        },
+        upsert=True,
+    )
+    received = await db.upload_chunks.count_documents(
+        {"user_id": user.user_id, "upload_id": upload_id}
+    )
     return {"received": received, "total": total_chunks}
 
 
@@ -781,14 +800,14 @@ async def finalize_chunked_upload(
 ):
     if not _UPLOAD_ID_RE.match(payload.upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
-    chunk_dir = CHUNKS_DIR / user.user_id / payload.upload_id
-    if not chunk_dir.is_dir():
+    query = {"user_id": user.user_id, "upload_id": payload.upload_id}
+    received = await db.upload_chunks.count_documents(query)
+    if received == 0:
         raise HTTPException(status_code=400, detail="Upload not found")
-    parts = sorted(chunk_dir.glob("*.part"))
-    if len(parts) != payload.total_chunks:
+    if received != payload.total_chunks:
         raise HTTPException(
             status_code=400,
-            detail=f"Upload incomplete: {len(parts)}/{payload.total_chunks} chunks received",
+            detail=f"Upload incomplete: {received}/{payload.total_chunks} chunks received",
         )
 
     await _check_analysis_quota(user)
@@ -801,10 +820,11 @@ async def finalize_chunked_upload(
     user_dir.mkdir(parents=True, exist_ok=True)
     save_path = user_dir / f"{analysis_id}.{ext}"
 
+    cursor = db.upload_chunks.find(query).sort("chunk_index", 1)
     with save_path.open("wb") as out:
-        for part in parts:
-            out.write(part.read_bytes())
-    shutil.rmtree(chunk_dir, ignore_errors=True)
+        async for part in cursor:
+            out.write(part["data"])
+    await db.upload_chunks.delete_many(query)
 
     mime = payload.mime_type or "video/mp4"
     return await _finalize_and_start_analysis(user, analysis_id, save_path, ext, mime)
@@ -914,6 +934,23 @@ async def _convert_to_mp4_if_needed(
     return save_path, mime
 
 
+async def _store_video_in_gridfs(analysis_id: str, path: Path) -> None:
+    """Persist the video to GridFS so ANY replica can stream it later.
+
+    Local pod disk is not shared between deployment replicas.
+    """
+    try:
+        async for f in db["videos.files"].find({"filename": analysis_id}, {"_id": 1}):
+            try:
+                await gridfs_videos.delete(f["_id"])
+            except Exception:
+                pass
+        with path.open("rb") as fh:
+            await gridfs_videos.upload_from_stream(analysis_id, fh)
+    except Exception:
+        logger.exception("GridFS store failed for %s", analysis_id)
+
+
 async def _run_analysis_in_background(
     analysis_id: str, save_path: Path, mime: str, deep: bool, ext: str = "mp4"
 ) -> None:
@@ -929,6 +966,7 @@ async def _run_analysis_in_background(
             {"analysis_id": analysis_id},
             {"$set": {"video_path": str(save_path), "mime_type": mime}},
         )
+        await _store_video_in_gridfs(analysis_id, save_path)
     except Exception:
         logger.exception("Background conversion step failed — using original file")
 
@@ -1014,9 +1052,26 @@ async def get_analysis_video(analysis_id: str, token: Optional[str] = None):
     ):
         raise HTTPException(status_code=404, detail="Not found")
     path = doc.get("video_path")
-    if not path or not Path(path).exists():
+    if path and Path(path).exists():
+        return FileResponse(path, media_type=doc.get("mime_type") or "video/mp4")
+
+    # Multi-replica fallback: this pod doesn't have the file locally — stream
+    # it from GridFS (shared storage in MongoDB).
+    try:
+        grid_out = await gridfs_videos.open_download_stream_by_name(analysis_id)
+    except Exception:
         raise HTTPException(status_code=404, detail="Video file missing")
-    return FileResponse(path, media_type=doc.get("mime_type") or "video/mp4")
+
+    async def _iter_gridfs():
+        while True:
+            chunk = await grid_out.readchunk()
+            if not chunk:
+                break
+            yield chunk
+
+    return StreamingResponse(
+        _iter_gridfs(), media_type=doc.get("mime_type") or "video/mp4"
+    )
 
 
 # ---------------- Sharing & Comments ----------------
@@ -1604,6 +1659,22 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+
+@app.on_event("startup")
+async def _ensure_indexes():
+    try:
+        # Orphaned chunks auto-expire after 24h
+        await db.upload_chunks.create_index(
+            "created_at", expireAfterSeconds=86400
+        )
+        await db.upload_chunks.create_index(
+            [("user_id", 1), ("upload_id", 1), ("chunk_index", 1)], unique=True
+        )
+    except Exception:
+        logging.getLogger("surfai").warning(
+            "upload_chunks index creation failed", exc_info=True
+        )
 
 
 @app.on_event("shutdown")
