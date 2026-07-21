@@ -111,3 +111,10 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - LS_PLANS in routers/lemonsqueezy.py fixed from SAR 50/80/110 to USD 15/25/35 (payment_transactions records).
 - IMPORTANT: after any frontend change, RE-EXPORT the web build to /app/backend/static_web before re-publishing, or the deployed website will be stale.
 - Tested by testing_agent iteration_8: all pass (backend static serving, live checkout creation, email rebrand).
+
+## Multi-replica upload & video storage fix (June 2026)
+- Deployed app runs 2 replicas -> local pod disk is NOT shared. Symptoms: "Upload incomplete 8/9 chunks" (chunks split across pods).
+- FIX: chunks stored in MongoDB db.upload_chunks (upsert, TTL 24h index); finalize assembles from Mongo; videos persisted to GridFS bucket 'videos' (filename=analysis_id) in background task; GET /analyses/{id}/video falls back to GridFS streaming when local file missing.
+- ffmpeg conversion runs in background task (-threads 1, 600s timeout) — HTTP responses <1s. Gemini fallback model updated to gemini-2.5-flash.
+- Verified: testing_agent iteration_11 (11/11 pass incl. GridFS byte-identical streaming fallback, idempotent chunk retry, TTL index).
+- NOTE: deployed pod is 0.05 vCPU / 128MB RAM — user advised to upgrade Resources for reliable AI video processing.
