@@ -729,7 +729,19 @@ async def create_analysis(
     save_path = user_dir / f"{analysis_id}.{ext}"
 
     with save_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+        written = 0
+        while True:
+            block = file.file.read(1024 * 1024)
+            if not block:
+                break
+            written += len(block)
+            if written > MAX_VIDEO_BYTES:
+                f.close()
+                save_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413, detail="Video too large (max 300MB)"
+                )
+            f.write(block)
 
     mime = file.content_type or "video/mp4"
     return await _finalize_and_start_analysis(user, analysis_id, save_path, ext, mime)
@@ -740,6 +752,8 @@ async def create_analysis(
 # multiple replicas behind a load balancer — each request can land on a
 # different pod, so local disk is not shared.
 _UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{16,64}$")
+MAX_CHUNK_BYTES = 8 * 1024 * 1024  # 8MB per chunk
+MAX_VIDEO_BYTES = 300 * 1024 * 1024  # 300MB assembled clip ceiling
 
 
 @api_router.post("/uploads/chunk")
@@ -753,7 +767,7 @@ async def upload_chunk(
 ):
     if not _UPLOAD_ID_RE.match(upload_id):
         raise HTTPException(status_code=400, detail="Invalid upload_id")
-    if total_chunks < 1 or total_chunks > 500 or not (0 <= chunk_index < total_chunks):
+    if total_chunks < 1 or total_chunks > 100 or not (0 <= chunk_index < total_chunks):
         raise HTTPException(status_code=400, detail="Invalid chunk index")
     if file is not None:
         data = await file.read()
@@ -764,6 +778,8 @@ async def upload_chunk(
             raise HTTPException(status_code=400, detail="Invalid base64 chunk")
     else:
         raise HTTPException(status_code=400, detail="No chunk data")
+    if len(data) > MAX_CHUNK_BYTES:
+        raise HTTPException(status_code=413, detail="Chunk too large (max 8MB)")
 
     await db.upload_chunks.replace_one(
         {
@@ -821,8 +837,17 @@ async def finalize_chunked_upload(
     save_path = user_dir / f"{analysis_id}.{ext}"
 
     cursor = db.upload_chunks.find(query).sort("chunk_index", 1)
+    written = 0
     with save_path.open("wb") as out:
         async for part in cursor:
+            written += len(part["data"])
+            if written > MAX_VIDEO_BYTES:
+                out.close()
+                save_path.unlink(missing_ok=True)
+                await db.upload_chunks.delete_many(query)
+                raise HTTPException(
+                    status_code=413, detail="Video too large (max 300MB)"
+                )
             out.write(part["data"])
     await db.upload_chunks.delete_many(query)
 
@@ -852,6 +877,37 @@ async def _finalize_and_start_analysis(
         "shared_with_coach_id": None,
     }
     await db.analyses.insert_one(dict(doc))
+
+    # Post-insert quota guard: closes the race where several simultaneous
+    # uploads all pass the pre-check. Counting AFTER insert is authoritative —
+    # if the cap is now exceeded, roll this one back (fail-closed).
+    if user.tier == "free":
+        cap = FREE_LIFETIME_LIMIT
+        total_now = await db.analyses.count_documents(
+            {"user_id": user.user_id, "status": {"$ne": "failed"}}
+        )
+    else:
+        cap = TIER_DAILY_LIMITS.get(user.tier, FREE_LIFETIME_LIMIT)
+        if cap == -1:
+            total_now = 0
+        else:
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            total_now = await db.analyses.count_documents(
+                {
+                    "user_id": user.user_id,
+                    "created_at": {"$gte": today_start},
+                    "status": {"$ne": "failed"},
+                }
+            )
+    if cap != -1 and total_now > cap:
+        await db.analyses.delete_one({"analysis_id": analysis_id})
+        save_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=402,
+            detail="Plan limit reached. Upgrade for more analyses.",
+        )
 
     # Kick off conversion + AI analysis in the background so this HTTP request
     # returns instantly (Cloudflare proxy times out at ~100s, and ffmpeg can be
@@ -1042,6 +1098,13 @@ async def get_analysis_video(analysis_id: str, token: Optional[str] = None):
     session_doc = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
     if not session_doc:
         raise HTTPException(status_code=401, detail="Invalid token")
+    expires_at = session_doc["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=401, detail="Session expired")
 
     doc = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})
     if not doc:

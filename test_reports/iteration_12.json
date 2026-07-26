@@ -1,0 +1,51 @@
+{
+  "summary": "Iteration 12 — SEC-001 (quota race), SEC-002 (unbounded uploads), and SEC-003 (expired session on /video?token=) fixes ALL VERIFIED. 16/16 backend tests PASS in 8.66s via new /app/backend/tests/test_sec_fixes_iter12.py. Concurrent free-tier race (3 simultaneous POST /api/analyses via ThreadPoolExecutor) produced status codes [200, 402, 402] — exactly one non-failed analysis persisted; the two rolled-back losers left no orphan files on disk. Sequential regression confirms 402 on the second free upload after seeding one status='ready' doc, and coach tier still uploads unlimited. Chunk cap: 9MB chunk -> 413 'Chunk too large (max 8MB)' with nothing persisted; 3MB chunk -> 200. total_chunks=101 -> 400 'Invalid chunk index'; total_chunks=100 accepted. Expired-session GET /api/analyses/{id}/video?token=<expired> -> 401 'Session expired', valid token still streams 200 bytes. Regressions green: chunked 3-part flow -> finalize 200 processing with upload_chunks docs deleted, unknown upload_id 400 'Upload not found', incomplete 400 'Upload incomplete', /api/plans 200, / serves HTML 200. All test-created analyses, local upload files, upload_chunks docs, and expired sessions cleaned up in teardown; final DB shows 0 rows for both demo users and 0 files on disk.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "internal analyse_video_with_gemini (server.py:~535)",
+        "issue": "Carry-over from iter 10/11 — 'gemini-2.0-flash' still in the fallback tuple returns HTTP 404 'no longer available' from Google. Not blocking this iteration's security-fix scope; real user uploads still fail unless gemini-2.5-pro succeeds first."
+      },
+      {
+        "endpoint": "POST /api/analyses (legacy) & POST /api/analyses/finalize",
+        "issue": "MAX_VIDEO_BYTES=300MB is enforced during write/assembly (413 + cleanup) but is only checked incrementally as bytes are written. A malicious client could still saturate a pod's disk IO with a 300MB payload before the 413. Consider Content-Length pre-check on the legacy path as a cheap early-reject; not blocking."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sec_fixes_iter12.py",
+    "/app/test_reports/pytest/iteration_12_sec_fixes.xml"
+  ],
+  "action_items": [
+    "(Carry-over) Replace 'gemini-2.0-flash' in server.py fallback tuple with a supported model (e.g. 'gemini-2.5-flash' or 'gemini-1.5-flash-latest') — otherwise real user uploads keep landing in status=failed.",
+    "(Optional hardening) Add a Content-Length reject on POST /api/analyses (legacy path) that returns 413 before streaming when the header exceeds MAX_VIDEO_BYTES, to avoid pod disk churn on obvious oversize uploads.",
+    "(Optional hardening) Consider capping FinalizeUploadIn.total_chunks explicitly at the Pydantic layer (Field(le=100)) so validation happens before touching Mongo — currently enforced only in POST /uploads/chunk."
+  ],
+  "critical_code_review_comments": [
+    "server.py:_finalize_and_start_analysis (879-910) — post-insert guard is correct: insert_one first, then re-count non-failed docs (lifetime for free, per-day for paid), delete_one + unlink + 402 if cap exceeded. Verified fail-closed under 3 concurrent free uploads: exactly one 200 (winner), two 402s ('Plan limit reached'), and the rolled-back losers leave no on-disk .mp4 files. cap == -1 (coach) short-circuits to total_now=0 so unlimited tiers never trip.",
+    "server.py:upload_chunk (759-802) — MAX_CHUNK_BYTES=8MB check after read/decode is correct (413 'Chunk too large'). total_chunks range check `<1 or >100` and chunk_index `0 <= i < total_chunks` are both enforced (400 'Invalid chunk index'). base64 path decodes before the size check, so a caller can't smuggle 12MB via chunk_b64 either. Verified.",
+    "server.py:create_analysis (716-747) & finalize_chunked_upload (812-855) — MAX_VIDEO_BYTES=300MB checked INCREMENTALLY during stream write / chunk assembly with proper cleanup: legacy path unlinks the save_path on 413; finalize path unlinks + delete_many(upload_chunks) on 413. Both branches raise 413 'Video too large (max 300MB)'.",
+    "server.py:get_analysis_video (1094-1137) — expires_at check parses str or datetime, coerces naive tz to UTC, and raises 401 'Session expired' when past. Mirrors get_current_user (server.py:304). Verified: expired session token -> 401 'Session expired'; valid coach token still 200 with byte stream.",
+    "server.py:_check_analysis_quota (677-713) — pre-check still runs before body ingestion; it's the first line of defence and reduces the number of concurrent inserts that reach the post-insert guard. Belt-and-suspenders with the new post-insert guard.",
+    "server.py — 1746 lines (grew from 1683 last iter). Split-into-routers debt is now larger; not blocking but worth doing before the next feature."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sec_fixes_iter12.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16)",
+    "frontend": "not tested this iteration (per review_request 'backend only')"
+  },
+  "seed_data_creation": "Re-ran the seed snippet from /app/memory/test_credentials.md at module-scope autouse fixture to reset free (user_demo_12345, demo_token_active) and coach (user_coach_67890, demo_coach_token) users + sessions. Also deleted any pre-existing analyses/chunks for those users before tests. Ephemeral state created during tests: (a) one seeded status='ready' analysis for the sequential 402 test — deleted immediately after assertion; (b) one 'expired_*' user_session doc + one status='ready' coach analysis with a real local .mp4 file for the SEC-003 test — all cleaned up in finally block. Post-run DB state verified clean: 0 analyses for both demo users, 0 upload_chunks, 0 expired_* sessions, 0 files in /app/backend/uploads/videos/user_demo_12345/ and /user_coach_67890/.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "The three security fixes (SEC-001/002/003) are fully covered by /app/backend/tests/test_sec_fixes_iter12.py. Rerun anytime as regression: `pytest backend/tests/test_sec_fixes_iter12.py -v`. The concurrent race test uses ThreadPoolExecutor(max_workers=3) with real HTTP posts of fake mp4 bytes; the exact win/lose distribution can vary run-to-run (typically [200,402,402], occasionally [402,402,402] if all three insert before the first count) — both are correct outcomes and the assertion allows <=1 success. Note: the winner's background AI/ffmpeg WILL mark the surviving analysis as status='failed' because fake bytes fail ffprobe — this is EXPECTED. Assertion checks that on-disk files map to ANY DB doc (any status), not only non-failed. If you re-run this suite, the coach subscription can drift back to expired between runs — the module-scope fixture re-seeds it upsert-style so no manual fix-up needed. Known iter 10/11 carry-over unfixed: 'gemini-2.0-flash' in the model fallback tuple returns 404 at Google.",
+  "rca_of_issue": "Not a bug this iteration — this run validates fixes for three vulnerabilities. SEC-001 (analysis quota race): three simultaneous POST /api/analyses on a free-tier user all passed the pre-check (each saw 0 existing), all inserted analyses, and left 3 docs (violating the 1-lifetime cap). Fix: post-insert re-count of non-failed docs in _finalize_and_start_analysis (server.py:881-910); if total_now > cap, delete the just-inserted doc AND unlink the just-written file, then raise 402. Verified fail-closed by 3x concurrent thread test: exactly [200,402,402] outcome, 0 rolled-back files remaining. SEC-002 (unbounded uploads): pre-fix a caller could POST arbitrarily large chunks and set total_chunks=500. Fix: MAX_CHUNK_BYTES=8MB (413), total_chunks cap 500->100 (400), MAX_VIDEO_BYTES=300MB (413 + cleanup) on legacy path and finalize assembly. All three verified with actual 9MB/3MB/101/100 requests. SEC-003 (session expiry bypass on video streaming): pre-fix GET /api/analyses/{id}/video?token= only checked session_token existence, not expires_at, so a leaked expired token still streamed videos. Fix: added expires_at check mirroring get_current_user (raises 401 'Session expired' when past). Verified with an explicitly inserted expired session doc — 401; valid token still 200."
+}
