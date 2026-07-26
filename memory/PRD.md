@@ -118,3 +118,9 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - ffmpeg conversion runs in background task (-threads 1, 600s timeout) — HTTP responses <1s. Gemini fallback model updated to gemini-2.5-flash.
 - Verified: testing_agent iteration_11 (11/11 pass incl. GridFS byte-identical streaming fallback, idempotent chunk retry, TTL index).
 - NOTE: deployed pod is 0.05 vCPU / 128MB RAM — user advised to upgrade Resources for reliable AI video processing.
+
+## Security audit + hardening (June 2026)
+- security_audit_agent: CONDITIONAL PASS. No critical/high issues (payments unforgeable, BOLA checks OK, no secret leakage, no traversal/injection).
+- Fixed: SEC-001 quota race (post-insert guard w/ rollback -> 402), SEC-002 upload caps (8MB/chunk 413, <=100 chunks, 300MB total 413 in finalize+legacy), SEC-003 video ?token= now checks session expiry.
+- Verified: testing_agent iteration_12 (16/16 pass, incl. 3-way concurrency race test).
+- Deferred (P3, optional): CORS allowlist, rate limiting, generic checkout error body, subscription_expired demotion by sub id.
