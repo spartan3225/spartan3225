@@ -1738,6 +1738,28 @@ async def _ensure_indexes():
         logging.getLogger("surfai").warning(
             "upload_chunks index creation failed", exc_info=True
         )
+    try:
+        # Crash recovery: if a pod died mid-analysis (OOM/restart), the doc
+        # stays 'processing' forever. Mark stale ones failed so they don't
+        # hang the UI or burn the user's quota (failed doesn't count).
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=30)
+        res = await db.analyses.update_many(
+            {"status": "processing", "created_at": {"$lt": cutoff}},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": "Analysis was interrupted by a server restart. Please upload your clip again — this attempt did not use your quota.",
+                }
+            },
+        )
+        if res.modified_count:
+            logging.getLogger("surfai").info(
+                "Marked %d stale processing analyses as failed", res.modified_count
+            )
+    except Exception:
+        logging.getLogger("surfai").warning(
+            "stale analysis cleanup failed", exc_info=True
+        )
 
 
 @app.on_event("shutdown")
