@@ -16,6 +16,7 @@ import {
   fetchMe,
   listAnalyses,
   logout,
+  deleteAccount,
   User,
   getQuota,
   Quota,
@@ -27,6 +28,8 @@ const BG =
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState({ total: 0, avg: 0, best: 0, latest: "—" });
   const [quota, setQuota] = useState<Quota | null>(null);
@@ -65,6 +68,23 @@ export default function ProfileScreen() {
   const onLogout = async () => {
     await logout();
     router.replace("/");
+  };
+
+  const onDeleteAccount = async () => {
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      await logout();
+      router.replace("/");
+    } catch (e) {
+      console.warn("delete account failed", e);
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
   };
 
   if (loading || !user) {
@@ -307,6 +327,29 @@ export default function ProfileScreen() {
             <Text style={styles.logoutText}>Log out</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            onPress={onDeleteAccount}
+            disabled={deleting}
+            testID="delete-account-btn"
+          >
+            {deleting ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
+            ) : (
+              <Text style={styles.deleteText}>
+                {confirmDelete
+                  ? "Tap again to permanently delete account"
+                  : "Delete account"}
+              </Text>
+            )}
+          </TouchableOpacity>
+          {confirmDelete && !deleting && (
+            <Text style={styles.deleteWarn}>
+              This permanently removes your account, videos and analyses. This
+              cannot be undone.
+            </Text>
+          )}
+
           <View style={styles.legalLinksRow}>
             <TouchableOpacity
               onPress={() => router.push("/terms" as any)}
@@ -544,6 +587,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     fontWeight: "800",
     textTransform: "uppercase",
+  },
+  deleteBtn: {
+    marginTop: spacing.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    minHeight: 44,
+  },
+  deleteText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    textDecorationLine: "underline",
+  },
+  deleteWarn: {
+    color: colors.error,
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 4,
+    paddingHorizontal: spacing.lg,
   },
   legalLinksRow: {
     flexDirection: "row",

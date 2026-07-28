@@ -1,0 +1,64 @@
+{
+  "summary": "Iteration 13 — Apple/Play submission blockers verified. (A) DELETE /api/auth/account works end-to-end: 9/9 backend pytests PASS in /app/backend/tests/test_account_deletion_iter13.py (JUnit at /app/test_reports/pytest/iteration_13_account_deletion.xml). A throwaway user was seeded directly in Mongo with a valid session, an analyses doc + local .mp4 in /app/backend/uploads/videos/<uid>/, a videos.files GridFS entry (filename=analysis_id), a comment doc, and an upload_chunks doc; DELETE /api/auth/account with the Bearer token returned 200 {ok:true}; every collection is 0 for that user (users, user_sessions, analyses, analysis_comments, upload_chunks, videos.files) and the local dir is removed; the used token then returns 401 on GET /api/auth/me. No auth -> 401 and bogus token -> 401 both verified. (B) Push-removal regression is clean: POST /api/analyses/{id}/comments still returns 200 and lists back correctly on the coach's own analysis; PUT /api/users/push-token returns 405 (endpoint fully removed). No references to expo-notifications/expo-device/push.ts/savePushToken/_send_push_notification/expo_push_token in source or node_modules. (C) Broader regression green: /api/plans 200, /api/health 200, / serves HTML, chunked upload happy path (2 base64 chunks via Form -> /api/analyses/finalize -> 200 processing with upload_chunks doc removed). (D) FRONTEND: verified on preview URL at 390x844: (i) with seeded demo_token_active the Profile tab loads with no red-screen, 'Delete account' button visible below 'Log out', first tap changes text to 'Tap again to permanently delete account' with red warning 'This permanently removes your account, videos and analyses. This cannot be undone.'; seeded user preserved (only 1st tap performed). (ii) With a throwaway user+session inserted in Mongo, both taps performed: 2nd tap called DELETE /api/auth/account, cleared session_token from localStorage, and redirected to landing '/'; Mongo confirms 0 users + 0 sessions for the throwaway id. One data-integrity BUG surfaced during code review + reproduced live: delete_account queries analysis_comments by user_id but add_comment writes only author_id, so comments authored by a deleted user remain (see rca_of_issue).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "DELETE /api/auth/account (server.py:1596)",
+        "issue": "Orphan comments remain after account deletion. add_comment (server.py:1177) writes only 'author_id' on analysis_comments docs, but delete_account filters by {'user_id': uid} — so comments authored by the deleted user are NOT removed. Live-reproduced: inserted a comment with author_id=<uid> (no user_id), called DELETE /auth/account -> 200, then re-queried analysis_comments by author_id -> still 1 remaining. This is a GDPR / Apple review compliance issue since the deletion PR explicitly promises comments are wiped. Fix: change to db.analysis_comments.delete_many({'author_id': uid}) or, safer, {'$or':[{'author_id':uid},{'user_id':uid}]}.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "internal analyse_video_with_gemini (server.py ~535)",
+        "issue": "Carry-over from iter 10-12: 'gemini-2.0-flash' still in the fallback tuple returns 404 'no longer available' at Google. Not exercised by this iteration's scope."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Image (multiple screens)",
+        "issue": "Console warning 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' — safe to fix by moving resizeMode from style={...} to prop resizeMode={...}. Reference: Profile screen render (any Image using style.resizeMode). Cosmetic, not a blocker."
+      },
+      {
+        "component": "Various Views/Pressables",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' — should migrate pointerEvents from props to StyleSheet.create() style. Cosmetic, not a blocker."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_account_deletion_iter13.py",
+    "/app/test_reports/pytest/iteration_13_account_deletion.xml"
+  ],
+  "action_items": [
+    "Fix the analysis_comments deletion filter in DELETE /api/auth/account (server.py:1596): use {'author_id': uid} (or an $or on both fields) so comments authored by the deleted user are actually removed. This is required for the account-deletion feature to be truthfully complete for the App Store review.",
+    "Optional cleanup: migrate `style.resizeMode` -> `resizeMode` prop and `props.pointerEvents` -> `style.pointerEvents` to silence RN 0.7x deprecation warnings.",
+    "(Carry-over) Replace 'gemini-2.0-flash' in the model fallback tuple in server.py with a supported model (e.g. 'gemini-2.5-flash')."
+  ],
+  "critical_code_review_comments": [
+    "server.py:delete_account (1575-1602) — logic is otherwise correct: iterates analyses to unlink each local video_path AND delete the matching GridFS videos.files entry by filename==analysis_id, then bulk-deletes analyses, upload_chunks, user_sessions, users, and shutil.rmtree(UPLOAD_DIR/uid, ignore_errors=True). The one flaw is the analysis_comments filter (see backend_issues.critical).",
+    "server.py — file grew to 1741 lines. Split-into-routers debt is now sizeable; not blocking submission but worth doing.",
+    "frontend/app/(tabs)/profile.tsx (73-88, 330-351) — 2-tap confirm is implemented cleanly: local state confirmDelete flips on 1st tap, 2nd tap calls deleteAccount() then logout() then router.replace('/'). deleting flag disables the button during the network call and shows an ActivityIndicator. On error, both confirmDelete and deleting reset so the user isn't stuck in an intermediate state. testID='delete-account-btn' present.",
+    "frontend/src/api.ts (455-457) — deleteAccount wraps apiFetch('/auth/account', {method:'DELETE'}) correctly; apiFetch attaches the Bearer token from AsyncStorage. No orphan calls to a removed push endpoint anywhere in api.ts.",
+    "frontend/app/_layout.tsx — clean, no push imports or listeners. No expo-notifications/expo-device anywhere in source or node_modules.",
+    "Comment schema mismatch (server.py:1177 vs 1596) — inserted docs have {'author_id': <uid>} but delete_account and add_comment refer to the author under different keys. Recommend standardising on 'author_id' everywhere for the analysis_comments collection."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_account_deletion_iter13.py (new)",
+    "/app/test_reports/pytest/iteration_13_account_deletion.xml (new, auto-generated)",
+    "/app/test_reports/iteration_13.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 in test_account_deletion_iter13.py)",
+    "frontend": "100% of covered flows (seeded 1st-tap + throwaway 2-tap delete + redirect + localStorage clear + DB verify)"
+  },
+  "seed_data_creation": "For backend delete tests: created 3 throwaway users at run time (unique user_test_del_<hex> ids), each with matching user_sessions doc; each was fully wiped by the endpoint or the fixture teardown. Verified 0 remaining rows post-run. For the comment-schema bug reproduction: created 1 throwaway user + 1 comment doc with only author_id set; cleaned up manually. For the frontend end-to-end test: created 1 throwaway user user_test_fe_<hex> + session tok_fe_<hex>; the app itself deleted them via the 2-tap flow; final DB check confirmed 0. Seeded demo_token_active + demo_coach_token users left completely untouched (verified: 1 doc each in users + user_sessions).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Rerun /app/backend/tests/test_account_deletion_iter13.py to regression this iteration's scope (9 tests, ~3s). The chunked-upload sub-test uses a 40-char hex upload_id because server.py:_UPLOAD_ID_RE = ^[a-f0-9]{16,64}$ — do not shorten it. The /api/uploads/chunk endpoint uses multipart/form-data (Form fields), NOT JSON — supply upload_id/chunk_index/total_chunks/chunk_b64 as form-encoded data. Finalize is POST /api/analyses/finalize (not /uploads/finalize). If the main agent applies the analysis_comments fix, add a targeted assertion: insert a comment with only author_id, DELETE /api/auth/account, assert count_documents({'author_id': uid}) == 0. Frontend test uses viewport 390x844 and localStorage session_token (AsyncStorage on web).",
+  "rca_of_issue": "BUG — orphan comments after account deletion. Reproduction: (1) insert a throwaway user + valid session; (2) insert an analysis_comments doc with only 'author_id' set to the throwaway user_id (matching what server.py:1177 writes in add_comment); (3) call DELETE /api/auth/account with the throwaway's Bearer token — returns 200 {ok:true}; (4) query analysis_comments by author_id — 1 doc still remains. Root cause: server.py:1596 uses db.analysis_comments.delete_many({'user_id': uid}), but the insert at server.py:1177 only stores author_id (no user_id). Because the delete filter never matches, comments authored by the deleted user linger forever. Impact: violates the deletion promise made in the PR description AND the Apple App Store account-deletion policy, which requires *all* user-associated content to be removed. Mitigation: replace the filter with {'author_id': uid} (safest and semantically correct) or {'$or':[{'author_id': uid},{'user_id': uid}]} for extra safety. Estimated fix: 1 line change in server.py + re-run test_account_deletion_iter13.py."
+}

@@ -451,12 +451,9 @@ export async function coachInbox(): Promise<AnalysisListItem[]> {
   return apiFetch<AnalysisListItem[]>("/coach/inbox");
 }
 
-// ---- Push notifications + plan management ----
-export async function savePushToken(token: string | null) {
-  return apiFetch<User>("/users/push-token", {
-    method: "PUT",
-    body: JSON.stringify({ token }),
-  });
+// ---- Account + plan management ----
+export async function deleteAccount() {
+  return apiFetch<{ ok: boolean }>("/auth/account", { method: "DELETE" });
 }
 
 export async function cancelRenewal() {

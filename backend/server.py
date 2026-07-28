@@ -127,7 +127,6 @@ class User(BaseModel):
     coach_specialty: Optional[str] = None
     coach_location: Optional[str] = None
     coach_public: bool = False
-    expo_push_token: Optional[str] = None
 
 
 class SessionExchangeRequest(BaseModel):
@@ -215,10 +214,6 @@ class ShareRequest(BaseModel):
 
 class CommentCreate(BaseModel):
     text: str
-
-
-class PushTokenUpdate(BaseModel):
-    token: Optional[str] = None
 
 
 class CancelRenewalResponse(BaseModel):
@@ -1188,23 +1183,6 @@ async def add_comment(
     }
     await db.analysis_comments.insert_one(dict(comment))
 
-    # Send push notification to the OTHER party (clip owner if commenter is coach, vice versa)
-    other_user_id = (
-        doc["user_id"] if user.user_id != doc["user_id"] else doc.get("shared_with_coach_id")
-    )
-    if other_user_id:
-        other = await db.users.find_one({"user_id": other_user_id}, {"_id": 0})
-        token = (other or {}).get("expo_push_token")
-        if token:
-            who = "Coach " + user.name if user.tier == "coach" else user.name
-            preview = body.text.strip()[:80]
-            await _send_push_notification(
-                token,
-                f"New comment from {who}",
-                preview,
-                {"analysis_id": analysis_id, "type": "comment"},
-            )
-
     return Comment(**comment)
 
 
@@ -1594,39 +1572,34 @@ async def stripe_webhook(request: Request):
     return {"ok": True, "type": event_type}
 
 
-async def _send_push_notification(to_token: str, title: str, body: str, data: dict | None = None):
-    """Best-effort push via Expo push service."""
-    if not to_token:
-        return
-    payload = {
-        "to": to_token,
-        "title": title,
-        "body": body,
-        "sound": "default",
-        "priority": "high",
-        "data": data or {},
-    }
-    try:
-        async with httpx.AsyncClient(timeout=10) as client_http:
-            await client_http.post(
-                "https://exp.host/--/api/v2/push/send",
-                json=payload,
-                headers={"Accept": "application/json", "Content-Type": "application/json"},
-            )
-    except Exception as e:
-        logger.warning(f"Push send failed: {e}")
+@api_router.delete("/auth/account")
+async def delete_account(user: User = Depends(get_current_user)):
+    """Permanently delete the user's account and all associated data.
 
-
-@api_router.put("/users/push-token", response_model=User)
-async def update_push_token(
-    body: PushTokenUpdate, user: User = Depends(get_current_user)
-):
-    token_value = (body.token or "").strip() or None
-    await db.users.update_one(
-        {"user_id": user.user_id}, {"$set": {"expo_push_token": token_value}}
-    )
-    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
-    return _user_to_model(doc)
+    Required by Apple App Store review for apps with account creation.
+    """
+    uid = user.user_id
+    async for a in db.analyses.find(
+        {"user_id": uid}, {"analysis_id": 1, "video_path": 1}
+    ):
+        vp = a.get("video_path")
+        if vp:
+            Path(vp).unlink(missing_ok=True)
+        async for f in db["videos.files"].find(
+            {"filename": a["analysis_id"]}, {"_id": 1}
+        ):
+            try:
+                await gridfs_videos.delete(f["_id"])
+            except Exception:
+                pass
+    await db.analyses.delete_many({"user_id": uid})
+    await db.analysis_comments.delete_many({"user_id": uid})
+    await db.upload_chunks.delete_many({"user_id": uid})
+    await db.user_sessions.delete_many({"user_id": uid})
+    await db.users.delete_one({"user_id": uid})
+    shutil.rmtree(UPLOAD_DIR / uid, ignore_errors=True)
+    logger.info("Account deleted: %s", uid)
+    return {"ok": True}
 
 
 @api_router.post("/payments/cancel-renewal", response_model=CancelRenewalResponse)

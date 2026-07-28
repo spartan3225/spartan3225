@@ -2,15 +2,8 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { useEffect } from "react";
-import { setNotificationHandler } from "../src/push";
 
 export default function RootLayout() {
-  useEffect(() => {
-    try {
-      setNotificationHandler();
-    } catch {}
-  }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
       <SafeAreaProvider>
