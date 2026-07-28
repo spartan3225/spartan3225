@@ -167,6 +167,17 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - Verified: testing_agent iteration_18 (17/17 backend + full frontend E2E incl. language switch, old-schema render, video controls). Web export regenerated to /app/backend/static_web (user must Re-publish for live site).
 - NOTE: new analyses must be run to see the new scores/key_moments (old ones show legacy layout).
 
+## Multi-video add-on + Train tutorials + Friend coupon (July 2026)
+- FRIEND COUPON: created live via LS API — code **SURFFRIEND100** (100% off, forever, max 1 redemption). Share with friend at checkout.
+- TRAIN VIDEO TUTORIALS: 6 curated YouTube embeds (TUTORIALS in src/trainLibrary.ts), horizontal cards in Train tab, modal player via src/components/YouTubeEmbed.tsx (iframe on web, react-native-webview on native).
+- MULTI-VIDEO PAID ADD-ON (one-time payment per multi-analysis, user's choice):
+  - Backend: users.multi_credits; LS one-time product plan_id "multi" → env LEMONSQUEEZY_VARIANT_MULTI (EMPTY — WAITING FOR USER to create the product in LemonSqueezy dashboard and give variant ID + price; checkout returns 400 until then). Webhook order_created grants +1 credit idempotently (db.applied_orders by LS order id).
+  - POST /api/analyses/finalize-multi: 2-3 chunk-uploaded clips → atomic credit consume (402 if none, refund on assembly/AI failure), ONE combined analysis (video_count, video_paths, is_multi), does NOT touch daily quota. Combined Gemini prompt (extra_files param on analyse_video_with_gemini; timestamps refer to clip 1). GridFS per clip as {analysis_id}_{i}. Video endpoint supports ?index=0|1|2 (clamped). Pose runs on clip 1 only. Shared _apply_ai_result() used by single+multi runners.
+  - Frontend: upload.tsx Single/Multi toggle, credits pill, add/remove up to 3 clips, buy button (web/Android; iOS shows 'purchase on website' note — Apple Netflix model), api.uploadChunksForFile + finalizeMultiUpload. Analysis page clip selector chips (skeleton overlay only on clip 0).
+  - E2E validated with REAL AI run: ana_cf496d925cac4b (2 clips, ready, score 63, 14 scores). testing_agent iteration_20: 15/15 backend + full frontend green. Orphan chunks on 402 auto-expire via existing 24h TTL index (non-issue).
+- Google Play: still BLOCKED on Google identity verification (user confirmed still waiting).
+- PENDING FROM USER: LemonSqueezy multi product variant ID (+ chosen price) → put in backend/.env LEMONSQUEEZY_VARIANT_MULTI and restart.
+
 ## Phases 2-4 + iPhone 6.9" screenshots (July 2026)
 - iPhone 6.9" App Store screenshots: 5 shots at exactly 1320x2868 in /app/frontend/public/store-assets/ (iphone69-01..05 + iphone69-screenshots.zip). Also copied to /app/backend/static_web/store-assets/ — downloadable at /store-assets/iphone69-screenshots.zip.
 - PHASE 2 Skeleton tracking: /app/backend/pose_tracker.py — MediaPipe EfficientDet-Lite0 person detection (model at /app/backend/models_ai/efficientdet_lite0.tflite, needed because surfers are tiny in wide footage) + MediaPipe Pose on expanded crop, 8fps sampling, temporal bbox tracking, 300s timeout, runs via asyncio.to_thread AFTER AI result saved in _run_analysis_in_background. Stores in db.pose_data collection (separate from analyses; ~45KB/clip) + pose_status field. Endpoint GET /api/analyses/{id}/pose. mediapipe==0.10.18 installed (protobuf pinned 4.25.9 — emergentintegrations verified still working). NOTE: local ffmpeg binary missing in dev pod; use imageio_ffmpeg bundled exe for CLI work; cv2.VideoCapture works fine for pose.
