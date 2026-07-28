@@ -132,3 +132,11 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - Web export regenerated at /app/backend/static_web (needs user Re-publish).
 - Apple Developer Program APPROVED (valid to Jul 27, 2027). Google Play Console signup completed, identity verification pending.
 - OPEN QUESTION: some videos still fail AI analysis on prod after resource upgrade - need failing examples from user (suspect very long/large clips).
+
+## Auth expansion + Apple IAP compliance (June 2026)
+- Added email/password auth (register/login, argon2 via pwdlib, links to existing Google accounts by email) and Sign in with Apple (POST /api/auth/apple, JWKS RS256, APPLE_AUDIENCES env, apple_sub linking). All issue standard user_sessions tokens.
+- Landing page: Continue with Google + Apple button (iOS native only) + Continue with Email form (login/register toggle).
+- Apple IAP compliance (guideline 3.1.1): paywall purchase buttons render only on web; native shows "managed on the web" note (Netflix model per 3.1.3(b)). Web checkout unchanged.
+- app.json: ios.usesAppleSignIn=true; expo-apple-authentication installed. backend/.env: APPLE_AUDIENCES.
+- Verified: testing_agent iteration_14 (9/9 backend + full frontend E2E). QA account: qa.tester@surfcoach23.com / TestPass123!
+- User must: Re-publish, then generate a NEW iOS build (both App Store blockers now resolved).
