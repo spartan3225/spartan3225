@@ -1,87 +1,178 @@
 {
-  "theme": "dark",
-  "archetype": "2 (Performance Pro)",
-  "colors": {
-    "background": "#0A0A0A",
-    "surface": "#121214",
-    "surface_elevated": "#1A1A1E",
-    "primary": "#00E5FF",
-    "secondary": "#2A2A2E",
-    "text_primary": "#FFFFFF",
-    "text_secondary": "#A1A1AA",
-    "error": "#FF3B30",
-    "success": "#39FF14",
-    "border": "#27272A"
+  "app_name": "SurfCoach23",
+  "personality": "6 Glass / Luxe structure with 7 Dark-First Utility typography and data emphasis",
+  "personality_one_liner": "A cinematic, premium command center that feels like an expensive piece of technical hardware.",
+  "color": {
+    "surface": "#0A0A0A",
+    "onSurface": "#FFFFFF",
+    "surfaceSecondary": "#161616",
+    "onSurfaceSecondary": "#EDEDED",
+    "surfaceTertiary": "#222222",
+    "onSurfaceTertiary": "#D4D4D4",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#0A0A0A",
+    "brand": "#00E5FF",
+    "brandPrimary": "#00E5FF",
+    "onBrandPrimary": "#0A0A0A",
+    "brandSecondary": "#00B8CC",
+    "onBrandSecondary": "#0A0A0A",
+    "brandTertiary": "#0D2224",
+    "onBrandTertiary": "#00E5FF",
+    "success": "#00FF88",
+    "onSuccess": "#0A0A0A",
+    "warning": "#FFD600",
+    "onWarning": "#0A0A0A",
+    "error": "#FF3366",
+    "onError": "#FFFFFF",
+    "info": "#00E5FF",
+    "onInfo": "#0A0A0A",
+    "border": "#222222",
+    "borderStrong": "#333333",
+    "divider": "#1A1A1A"
   },
   "typography": {
-    "fonts": {
-      "heading": "Oswald, sans-serif",
-      "body": "Manrope, sans-serif"
-    },
+    "displayFontFamily": "Rajdhani",
+    "textFontFamily": "Satoshi",
     "scale": {
-      "h1": "text-4xl tracking-tighter uppercase font-bold",
-      "h2": "text-3xl tracking-tight uppercase font-semibold",
-      "h3": "text-2xl tracking-tight font-semibold",
-      "h4": "text-xl font-medium",
-      "body": "text-base leading-relaxed",
-      "label": "text-xs tracking-widest uppercase font-bold"
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
     }
   },
-  "spacing_and_layout": {
-    "general": "Use generous spacing. Containers must pad content to avoid border collision.",
-    "grid": "Bento Grid (Control Room Mode) for AI analysis results. Use dense packing for stats, 1px solid borders for definition instead of shadows.",
-    "borderRadius": "Rounded-none or very subtle rounded-sm (4px) to maintain the tactical, athletic feel."
+  "spacing": {
+    "rule": "Generous Apple-like margins, minimal chrome, sticky CTAs in thumb zone. Leave breathing room around dense data.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
   },
-  "surfaces": {
-    "cards": "Flat background (#121214), 1px subtle border (#27272A), no shadow. Tactical Minimalism.",
-    "buttons": "Sharp edges, solid primary color (#00E5FF) with black text for main CTAs. Or transparent with 1px border for secondary.",
-    "modals_overlays": "Solid dark background (#0A0A0A) with a sharp border. Avoid glassmorphism as it reduces contrast for performance stats."
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
   },
-  "motion_and_interactions": {
-    "buttons": "Slight scale down (0.95) on press. Immediate feedback.",
-    "loading": "Use The 'Tracing Beam' concept - glowing cyan gradient traveling around the video preview edge during AI analysis.",
-    "transitions": "Fast, crisp transitions. No slow fades."
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "Ionicons",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Floating bottom tab bar over scrolling content",
+      "Sticky headers above scroll views",
+      "AI Review score cards layered over cinematic backgrounds",
+      "Video player controls overlay",
+      "Ensure >= 75% dark tint behind text on glass for readability"
+    ],
+    "dont's": [
+      "Form fields",
+      "Dense body text areas",
+      "Standard list rows without background imagery"
+    ]
   },
-  "components": {
-    "video_player": "Edge-to-edge, immersive. Controls overlay with bg-black/40 gradient. Use text-shadow for readability.",
-    "ai_score_badge": "Large condensed font, high contrast. Use Neon Green if score > 80, Blaze Orange if < 50.",
-    "mistake_list": "Left-aligned, 1px left border in Blaze Orange to denote correction needed. Dense layout.",
-    "nav_bar": "Bottom tab nav with crisp icons. Active state highlighted by a Volt Blue top border (2px)."
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
   },
-  "media": {
-    "image_urls": {
-      "hero_background": {
-        "url": "https://static.prod-images.emergentagent.com/jobs/bade60e2-d6bb-40f2-9843-b258282a5a76/images/742e6d4b2cb10a6cef4e0bbd3eb96e3b16c6fe7bd5bb48059af9f3000f9d4d96.png",
-        "description": "Cinematic dark abstract background with glowing neon cyan wave outlines",
-        "placement": "Login Screen / Splash Screen background overlay"
+  "screens": [
+    {
+      "name": "Home",
+      "purpose": "A premium dashboard welcoming the user with their latest session stats and a quick entry into AI analysis.",
+      "states": {
+        "loading": "Dark skeleton loaders masking the hero card and recent sessions.",
+        "empty": "Glass card prompting the user to 'Upload your first wave'.",
+        "error": "Subtle red-tinted glass toast with a retry button."
       },
-      "sample_video_thumbnail_1": {
-        "url": "https://images.unsplash.com/photo-1697944231848-03d00cb9ce1c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDR8MHwxfHNlYXJjaHwxfHxzdXJmZXIlMjByaWRpbmclMjB3YXZlfGVufDB8fHx8MTc3ODIzNjA5N3ww&ixlib=rb-4.1.0&q=85",
-        "description": "A man riding a wave on top of a surfboard",
-        "placement": "Dashboard past analysis card thumbnail"
+      "layout": "Large hero section with 'dark_ocean_abstract' background and a glass-frosted overlay showing the latest session's overall score. A prominent 'Analyze Video' FAB or primary button sticky at bottom. Horizontal scroll for recent sessions below the hero."
+    },
+    {
+      "name": "AI Review",
+      "purpose": "The core app experience breaking down a single wave with deep technical analysis and video playback.",
+      "states": {
+        "loading": "Skeleton UI over a dark background mimicking the layout of the score circles.",
+        "empty": "N/A (Detail screen)",
+        "error": "Error loading analysis message with reload CTA."
       },
-      "sample_video_thumbnail_2": {
-        "url": "https://images.pexels.com/photos/19613298/pexels-photo-19613298.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
-        "description": "Surfer skillfully rides a large wave under a clear sky on the ocean",
-        "placement": "Dashboard past analysis card thumbnail"
+      "layout": "Top half is the video player (expo-video) with custom glass controls (slow-mo, frame-step). Below (scrollable): a large overall score ring (cyan). A 3-column grid of 12+ sub-score circles (brandTertiary bg, cyan progress rings). A 'Strengths' glass card. A 'Main Mistake' card (error color tinted). A numbered list of top 5 corrections. A scrollable horizontal row of pill-shaped 'Key Moments' timestamps that jump the video."
+    },
+    {
+      "name": "Progress",
+      "purpose": "Tracks the surfer's evolution over time via high-contrast charts and metrics.",
+      "states": {
+        "loading": "Chart skeletons.",
+        "empty": "Illustration of a wave with 'Complete analyses to see your trends'.",
+        "error": "Data fetch error."
       },
-      "dark_texture": {
-        "url": "https://images.unsplash.com/photo-1618502396341-5c680e7d7233?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwxfHxkYXJrJTIwb2NlYW4lMjB3YXZlJTIwdGV4dHVyZXxlbnwwfHx8fDE3NzgyMzYwOTd8MA&ixlib=rb-4.1.0&q=85",
-        "description": "Blue body of water during daytime (darkened for texture)",
-        "placement": "Profile header background texture"
-      }
+      "layout": "Large headline metric (e.g., 57/100 average) at the top. A line chart for score trends. A vertical list of 'Skill Evolution' bars showing +/- deltas (e.g., Rail Control +15%)."
+    },
+    {
+      "name": "Train",
+      "purpose": "A library of highly visual, actionable drills to improve specific weaknesses.",
+      "states": {
+        "loading": "Thumbnail skeletons.",
+        "empty": "No drills available.",
+        "error": "Failed to load library."
+      },
+      "layout": "Horizontal category filters (Surf, Land, Balance, Mobility) pinned to top with glass effect. A 2-column grid of drill cards. Each card uses a photo with a bottom-heavy gradient scrim and text anchored at the bottom."
+    },
+    {
+      "name": "Profile",
+      "purpose": "Manages account settings, subscription tier, and preferences.",
+      "states": {
+        "loading": "Settings list skeleton.",
+        "empty": "N/A",
+        "error": "N/A"
+      },
+      "layout": "Top section features user level ('Ocean Explorer') inside a premium glass badge. Below are standard iOS-style settings rows grouped in surfaceSecondary rounded containers (Account, Quota, Language Picker)."
     }
-  },
-  "testing": {
-    "attributes": "All interactive elements MUST include a data-testid attribute. Examples: data-testid='login-google-btn', data-testid='upload-video-btn', data-testid='start-analysis-btn'."
+  ],
+  "images": {
+    "hero_surfer_wave": {
+      "url": "https://images.unsplash.com/photo-1493225255756-d9584f8606e9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MTJ8MHwxfHNlYXJjaHwxfHxzdXJmZXIlMjBjYXRjaGluZyUyMHdhdmUlMjBiYXJyZWx8ZW58MHx8fHwxNzg1MjczNTQ2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Surfer catching a wave in a barrel"
+    },
+    "dark_ocean_abstract": {
+      "url": "https://images.unsplash.com/photo-1710438399422-2fca27686bcd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxkYXJrJTIwbW9kZXJuJTIwb2NlYW4lMjB3YXZlJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzg1MjczNTQ2fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Dark abstract ocean waves"
+    },
+    "train_drill_mobility": {
+      "url": "https://images.unsplash.com/photo-1701826510609-b8d07deca0d4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHw0fHxzdXJmaW5nJTIwdHJhaW5pbmclMjBkcmlsbCUyMHN0cmV0Y2glMjBtb2JpbGl0eXxlbnwwfHx8fDE3ODUyNzM1NDZ8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Man performing mobility stretches"
+    },
+    "train_drill_surf": {
+      "url": "https://images.unsplash.com/photo-1645499683497-22662a9b1704?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAxODF8MHwxfHNlYXJjaHwzfHxzdXJmaW5nJTIwdHJhaW5pbmclMjBkcmlsbCUyMHN0cmV0Y2glMjBtb2JpbGl0eXxlbnwwfHx8fDE3ODUyNzM1NDZ8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Man on beach next to surfboard"
+    }
   },
   "instructions_to_main_agent": [
-    "Translate Tailwind scale classes into React Native StyleSheet objects or use NativeWind.",
-    "Enforce the Dark Theme strictly. The app background is #0A0A0A.",
-    "Do NOT use typical blue gradients. Use the Electric Cyan (#00E5FF) solely as an accent/action color on dark backgrounds.",
-    "Implement the AI Loading state using a glowing border or an energetic loader.",
-    "For the Video Preview, use an edge-to-edge layout without borders.",
-    "Never use generic placeholder images. Map the provided image_urls to the corresponding components.",
-    "Use Phosphor icons (if possible) or React Native vector icons for a sharp, technical look."
-  ]
+    "Strictly follow the Dark premium theme (#0A0A0A background with #00E5FF cyan accents). Do not introduce navy or purple.",
+    "Implement glassmorphism using expo-blur on the bottom tab bar, floating headers, and the AI Review coach cards. Apply a >=75% opacity dark tint behind text over glass.",
+    "For the AI Review page, build a highly dense but readable data hierarchy using Rajdhani for the metrics and Satoshi for the subtext. 12+ sub-score circles should be compact (e.g., 3 columns).",
+    "Video player must be custom styled with slow-mo and frame-step controls overlaid on the video using glass effect.",
+    "Main Mistake card should distinctly utilize the `error` color token (#FF3366) as a subtle background tint (e.g., 10% opacity) to create contrast against the 'Strengths' cyan-tinted card.",
+    "All imagery with overlaid text (like Train tab drill cards) must include a top-to-bottom vertical linear gradient scrim (transparent to >=70% surfaceInverse).",
+    "Wire haptics heavily into the AI Review page (e.g., when tapping key moment timestamps, or adjusting video speed)."
+  ],
+  "haptics": {
+    "events": {
+      "tab_press": "selection",
+      "key_moment_timestamp_tap": "light",
+      "video_slow_mo_toggle": "medium",
+      "upload_video_success": "success",
+      "drill_card_press": "light"
+    }
+  }
 }

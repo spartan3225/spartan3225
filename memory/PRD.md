@@ -154,3 +154,10 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - Generated 5 screenshots at exactly 2048x2732 (Apple 13" iPad requirement): home/sessions, analysis (with real surf video frame injected as poster), corrections/drills, upload screen, landing hero.
 - Stored in /app/frontend/public/store-assets/ (auto-included in every expo web export -> served at /store-assets/ on preview and, after re-publish, on the live domain).
 - Demo analysis seeded locally: ana_ipadshot001 for user_demo_12345 (status ready, real 5MB surf mp4 copied to their upload dir) - reusable for future marketing shots.
+
+## Stuck-analysis + logout fixes (June 2026)
+- Analysis page now polls every 5s while processing; auto-updates to ready/failed; failed banner with 'quota not used' + UPLOAD AGAIN button; score pill only when ready.
+- Backend: lazy stale watchdog on GET /analyses/{id} (processing >20min -> failed on read, replica-safe); AI pipeline hard timeout 900s.
+- Logout fixed: '/' route ambiguity (app/index vs (tabs)/index) - goToLanding() uses window.location.href on web, dismissAll+replace native; also used for delete-account. logout() clears token first.
+- Verified: iteration_16 (7/7 backend + polling/failed E2E) and iteration_17 (logout E2E). Optional future cleanup: move landing to explicit route.
+- Apple login on website: intentionally absent (iOS native only); web has Google + email.
