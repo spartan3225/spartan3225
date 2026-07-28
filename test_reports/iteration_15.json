@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 15 verified the tiny follow-up change: PRICING section on landing page (index.tsx) is now gated by Platform.OS === 'web'. Web regression (mobile viewport 375x667, logged OUT) confirms all pricing content ($15/$25/$35 cards, LEARN/ADVANCED/PRO tiers, 7-day money-back guarantee line, 'see refund policy' link) still renders on web preview. FAQ, CONTACT and footer (Terms/Privacy/Refunds testIDs) all render. Continue with Google + Continue with Email buttons present; email form opens showing email-input, password-input, email-submit-btn. Logged-in check (localStorage session_token=demo_token_active) redirects from '/' to tabs UI (SESSIONS/ANALYSE/PROFILE tabs visible, 'YOUR SESSIONS.' rendered). Backend smoke: /api/health 200, /api/plans 200 returning 4 plans (free, learn, advanced, pro), / returns 200 HTML from static_web export. Code inspection of /app/frontend/app/index.tsx confirms the Platform.OS === 'web' conditional wraps the PRICING View from line 369 to closing `)}` on line 444; FAQ/Contact/Footer are outside the conditional and always render. Balanced JSX braces, lint passes per main agent. Native iOS build will therefore hide pricing (not testable in browser as Platform.OS is 'web').",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "Image (HERO_IMAGE)", "issue": "Console warning: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' Reference: /app/frontend/app/index.tsx:595 (styles.heroImg.resizeMode). Non-blocking, pre-existing prior to this iteration."}
+    ]
+  },
+  "test_report_links": ["/app/test_reports/iteration_15.json"],
+  "action_items": [
+    "(Optional, pre-existing) Move resizeMode from styles.heroImg to <Image resizeMode='cover' /> prop to silence deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "Platform.OS === 'web' conditional in index.tsx (lines 369-444) correctly wraps ONLY the PRICING View. FAQ (line 447), CONTACT (line 474), Final CTA (line 510) and Footer (line 539) remain outside the conditional as intended.",
+    "Refund policy link inside the pricing block (line 435) uses router.push('/refund') - only reachable on web now, which is correct (native users don't see pricing so don't need this link there). A separate Refund link is still present in footer for all platforms.",
+    "Static web export at /app/backend/static_web is served correctly by backend (curl / returns text/html 200)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "None. Used pre-seeded demo_token_active session from test_credentials.md for logged-in redirect check.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "iteration 15 was a single-line-scope change gating PRICING to web via Platform.OS. All web regression + backend smoke passed. Native iOS hiding of pricing must be verified with a real device/simulator build - NOT testable via Playwright browser (Platform.OS is always 'web' in web preview). Do not re-run auth/payment flows (LIVE LemonSqueezy).",
+  "rca_of_issue": "N/A - verification-only iteration, no bug encountered."
+}

@@ -364,10 +364,12 @@ export default function LoginScreen() {
         </View>
       </View>
 
-      {/* ===== PRICING ===== */}
-      <View style={[styles.section, styles.sectionAlt]}>
-        <Text style={styles.sectionKicker}>PRICING</Text>
-        <Text style={styles.sectionTitle}>Pick the plan that fits.</Text>
+      {/* ===== PRICING (web only — Apple 3.1.1 forbids external purchase
+          pricing inside the iOS app) ===== */}
+      {Platform.OS === "web" && (
+        <View style={[styles.section, styles.sectionAlt]}>
+          <Text style={styles.sectionKicker}>PRICING</Text>
+          <Text style={styles.sectionTitle}>Pick the plan that fits.</Text>
         <Text style={styles.sectionSubtitle}>
           Prices in US Dollars (USD). Cancel anytime. Billed monthly.
         </Text>
@@ -428,17 +430,18 @@ export default function LoginScreen() {
           <Text style={styles.priceBullet}>• Early access to new features</Text>
         </View>
 
-        <Text style={styles.refundLine}>
-          7-day money-back guarantee on your first subscription —{" "}
-          <Text
-            style={styles.refundLink}
-            onPress={() => router.push("/refund" as any)}
-          >
-            see refund policy
+          <Text style={styles.refundLine}>
+            7-day money-back guarantee on your first subscription —{" "}
+            <Text
+              style={styles.refundLink}
+              onPress={() => router.push("/refund" as any)}
+            >
+              see refund policy
+            </Text>
+            .
           </Text>
-          .
-        </Text>
-      </View>
+        </View>
+      )}
 
       {/* ===== FAQ ===== */}
       <View style={styles.section}>
