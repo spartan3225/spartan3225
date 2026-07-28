@@ -8,6 +8,7 @@ import {
   Image,
   ImageBackground,
   ScrollView,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -65,9 +66,21 @@ export default function ProfileScreen() {
     }, [load])
   );
 
+  const goToLanding = () => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      // Hard navigation: '/' is ambiguous between the landing page and the
+      // tabs index inside this group — a client-side replace keeps the tabs
+      // UI mounted. A full reload always resolves to the landing page.
+      window.location.href = "/";
+    } else {
+      router.dismissAll?.();
+      router.replace("/");
+    }
+  };
+
   const onLogout = async () => {
     await logout();
-    router.replace("/");
+    goToLanding();
   };
 
   const onDeleteAccount = async () => {
@@ -79,7 +92,7 @@ export default function ProfileScreen() {
     try {
       await deleteAccount();
       await logout();
-      router.replace("/");
+      goToLanding();
     } catch (e) {
       console.warn("delete account failed", e);
       setDeleting(false);

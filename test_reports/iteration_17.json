@@ -1,0 +1,23 @@
+{
+  "summary": "Iteration 17 — retest of the LOGOUT bug only (frontend only, per E1 request). VERIFIED FIXED. In app/(tabs)/profile.tsx the new goToLanding() helper does window.location.href='/' on web (hard nav) and router.dismissAll()+replace('/') on native. Reproduction steps from iter-16 now pass end-to-end: token seeded in localStorage -> tabs render -> open /profile -> tap logout-btn -> IMMEDIATELY landing screen renders (Continue with Google visible, YOUR SESSIONS gone) with no manual reload, localStorage.session_token cleared, and reload keeps user logged out. Sanity: setting demo_token_active again + reload correctly redirects to (tabs) Sessions screen.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Route ambiguity between app/index.tsx and app/(tabs)/index.tsx still exists structurally (both resolve to '/'), but is now correctly worked around via a hard window.location navigation on web. Long-term, moving the landing route to an explicit path (e.g. app/(auth)/landing.tsx) or adding an unauth-guard in (tabs)/_layout.tsx would be cleaner, but not required to close this bug.",
+    "goToLanding() correctly branches on Platform.OS — native uses router.dismissAll()+replace('/') which pops any modals in the (tabs) stack before replacing; web relies on full page reload which is the only reliable way to bust the (tabs) group from itself."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped)", "frontend": "100%"},
+  "seed_data_creation": "Re-seeded demo_token_active session in user_sessions after logout invalidated it (twice). demo user_demo_12345 unchanged. No other seed changes.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "LOGOUT bug is closed. If retested: (1) always re-seed demo_token_active before FE logout tests because the backend logout endpoint deletes the DB row; (2) the fix relies on Platform.OS==='web' -> window.location.href='/' — on the preview URL this triggers a full document navigation and the landing (app/index.tsx) mounts fresh (fetchMe returns null -> login-screen rendered). Do NOT modify frontend/.env or metro.config.js.",
+  "rca_of_issue": "Confirmed the iter-16 RCA and fix: because Expo Router treats (tabs) as a route group with (tabs)/index.tsx also at '/', router.replace('/') from within the group re-uses the group and keeps the tabs UI mounted (Sessions kept rendering after logout). The applied fix in profile.tsx replaces router.replace('/') with goToLanding(): on web it performs window.location.href='/' which is a hard document navigation that fully unmounts the (tabs) group and remounts app/index.tsx (landing). Verified: immediately after tapping logout-btn — URL=/, session_token=null, login-google-btn visible, YOUR SESSIONS not visible, login-screen container visible, page.reload() keeps landing. Sanity: setting demo_token_active back + reload correctly redirects to tabs (Sessions). No regressions observed."
+}
