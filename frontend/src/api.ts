@@ -115,6 +115,44 @@ export async function exchangeSessionId(sessionId: string) {
   return data.user as User;
 }
 
+async function authPost(path: string, body: object): Promise<User> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `Error ${res.status}`;
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  const data = await res.json();
+  await setToken(data.session_token);
+  return data.user as User;
+}
+
+export async function emailRegister(email: string, password: string, name?: string) {
+  return authPost("/auth/register", { email, password, name });
+}
+
+export async function emailLogin(email: string, password: string) {
+  return authPost("/auth/login", { email, password });
+}
+
+export async function appleLogin(
+  identityToken: string,
+  name?: string | null,
+  email?: string | null
+) {
+  return authPost("/auth/apple", {
+    identity_token: identityToken,
+    name: name || undefined,
+    email: email || undefined,
+  });
+}
+
 export async function fetchMe(): Promise<User | null> {
   try {
     return await apiFetch<User>("/auth/me");

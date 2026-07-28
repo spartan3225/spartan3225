@@ -1,0 +1,60 @@
+{
+  "summary": "Iteration 14 — Email/password auth, Apple auth, login UI on landing, and iOS paywall gating (web regression). All 9 backend pytests PASS (/app/backend/tests/test_email_apple_auth_iter14.py, JUnit at /app/test_reports/pytest/iteration_14_auth.xml). Covered: (a) POST /api/auth/register success 200 -> AuthResponse with session_token + user(tier=free); session works on GET /api/auth/me; (b) duplicate register -> 409 with 'already exists' message; (c) short password (7 chars) -> 422 via Pydantic Field(min_length=8); (d) Google-style linking: pre-seeded a Google-only user doc (no password_hash) in db.users, POST /auth/register with same email returned 200 AND same user_id (no duplicate), password_hash was persisted on the existing doc — verified via Mongo count_documents==1; (e) login correct -> 200; (f) login wrong password -> 401 'Invalid email or password'; (g) login unknown email -> 401 (same generic message, no enumeration); (h) POST /api/auth/apple with garbage identity_token -> 401 as expected; (i) session token from /auth/register works on GET /api/analyses (200 list) and GET /api/analyses/quota (200 dict) — confirms email/password sessions live in the SAME user_sessions collection as Google/Apple. FRONTEND on preview (390x844, logged-out via localStorage.removeItem): landing page shows BOTH 'Continue with Google' and 'Continue with Email' toggle; tapping the toggle reveals email-input + password-input + email-submit-btn (default 'Log In') + toggle-register-btn; toggling flips submit label to 'Create Account'; logging in as qa.tester@surfcoach23.com / TestPass123! stores a 43-char session_token in localStorage and lands on tabs ('Hey, QA' + SESSIONS/ANALYSE/PROFILE tabs visible); wrong password shows red 'Invalid email or password' on the landing page (no crash); Profile tab shows LOG OUT button with testID=logout-btn — clicking it clears session_token and returns to '/'; re-login with the same credentials lands back on tabs. PAYWALL WEB REGRESSION with demo_token_active seeded: /paywall renders all 3 upgrade buttons (upgrade-learn-btn, upgrade-advanced-btn, upgrade-pro-btn, each count=1) and all 3 plan cards (plan-learn, plan-advanced, plan-pro); native-subscription-note is CORRECTLY ABSENT on web (count=0); no LemonSqueezy checkout was completed. Deprecated packages detected: none new in this iteration. Prior React Native deprecation warnings (Image style.resizeMode, props.pointerEvents) still surface in the console but are cosmetic and unchanged from iter 13.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/register",
+        "issue": "EmailStr rejects reserved TLDs like .test / .example (IANA special-use). Not a bug — but worth documenting so future testing agents use a normal domain (.com/.org). No code change required."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "Image (multiple screens)",
+        "issue": "Console warning 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' — carry-over from iter 13. Cosmetic, not a blocker."
+      },
+      {
+        "component": "Various Views/Pressables",
+        "issue": "Console warning 'props.pointerEvents is deprecated. Use style.pointerEvents' — carry-over from iter 13. Cosmetic, not a blocker."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_email_apple_auth_iter14.py",
+    "/app/test_reports/pytest/iteration_14_auth.xml"
+  ],
+  "action_items": [
+    "(Nice-to-have, non-blocker) Silence RN 0.7x deprecation warnings by migrating `style.resizeMode` -> `resizeMode` prop and `props.pointerEvents` -> `style.pointerEvents`.",
+    "(Carry-over from iter 13) Fix orphan comments in DELETE /api/auth/account: use {'author_id': uid} in delete_many, since add_comment writes only author_id, not user_id.",
+    "(Carry-over from iter 8+) Replace 'gemini-2.0-flash' in the fallback tuple with 'gemini-2.5-flash' (Google 404s the old id)."
+  ],
+  "critical_code_review_comments": [
+    "server.py:410-460 (email register/login) — clean: pwdlib argon2id for hashing, 8-char min_length via Pydantic Field, duplicate detection checks for existing password_hash (linking flow reuses same user_id, preserves google account tier/subscription), login returns a generic 401 for both unknown email AND wrong password (no user enumeration).",
+    "server.py:475-527 (apple login) — uses PyJWKClient against https://appleid.apple.com/auth/keys, decodes RS256 with audience from env APPLE_AUDIENCES ('com.surfcoach23.app,host.exp.Exponent') and issuer 'https://appleid.apple.com'; links by apple_sub OR email; falls back to '<sub>@privaterelay.appleid.com' when Apple hides email. Safe.",
+    "server.py:386-396 (_create_session) — 32-byte token_urlsafe (43 chars), 7-day TTL, single user_sessions collection is shared across ALL auth providers (google/email/apple). Confirmed session compat via /api/analyses + /api/analyses/quota.",
+    "frontend/app/index.tsx:251-314 — 'Continue with Email' collapses/expands cleanly, Log In / Create Account toggle flips submit label AND controls which endpoint the frontend calls, testIDs (show-email-login-btn, email-input, password-input, email-submit-btn, toggle-register-btn) all present and used successfully in Playwright.",
+    "frontend/app/paywall.tsx:180-192 & 211-219 — iOS gating is symmetric: `{Platform.OS !== 'web' && <native-subscription-note />}` and `{!isFree && Platform.OS === 'web' && <upgrade-btn/>}`. Web behaviour is unchanged, so LemonSqueezy checkout is untouched on desktop/mobile browsers.",
+    "frontend/app/index.tsx error state — 'Invalid email or password' surfaces correctly in a styled red text on the landing page, no red-screen or unhandled promise rejection.",
+    "backend/.env — APPLE_AUDIENCES is set to 'com.surfcoach23.app,host.exp.Exponent' matching both prod bundle and Expo Go, good.",
+    "server.py has now grown to 1899 lines — router-splitting debt continues to increase. Not blocking submission but overdue for a refactor."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_email_apple_auth_iter14.py (new)",
+    "/app/test_reports/pytest/iteration_14_auth.xml (new, auto-generated)",
+    "/app/test_reports/iteration_14.json (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 in test_email_apple_auth_iter14.py)",
+    "frontend": "100% (landing UI + email register/login submit + wrong-password error + logout + re-login + paywall web regression)"
+  },
+  "seed_data_creation": "Backend tests create ~5 throwaway users under email pattern test_<tag>_<uuid8>@surfcoach23qa.com plus 1 pre-seeded Google-only user user_google_<hex> for the linking test. All are removed by the module-scoped autouse cleanup_test_users fixture (verified 0 remaining post-run). The QA test account qa.tester@surfcoach23.com / TestPass123! is preserved for future runs (documented in /app/memory/test_credentials.md). Seeded demo_token_active and demo_coach_token users were untouched (verified 1 doc each in users + user_sessions). Trimmed 5 extra qa.tester sessions from repeated frontend logins, kept 1 recent.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "IMPORTANT: Pydantic EmailStr rejects reserved TLDs (.test, .example, .invalid, .localhost). When creating throwaway users use a non-reserved TLD such as .com or .org — e.g. test_x_<uuid>@surfcoach23qa.com in this iter's test file. QA persistent user is qa.tester@surfcoach23.com / TestPass123! — register returns 409 the first time (already exists), so fall back to login. LemonSqueezy is LIVE — do NOT click the CHOOSE / upgrade-<plan>-btn to completion, only check that they exist on web. Apple sign-in cannot be tested end-to-end without a real Apple device — /api/auth/apple with a fake token returning 401 is the maximum coverage we can get. Frontend paywall iOS gating (native-subscription-note visible + upgrade buttons hidden) is NOT testable on the web preview and requires a native build. Sessions for all providers live in the shared user_sessions collection so any prior test using demo_token_active still applies.",
+  "rca_of_issue": "N/A — all covered flows PASS in this iteration."
+}

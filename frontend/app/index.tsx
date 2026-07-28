@@ -9,13 +9,21 @@ import {
   Platform,
   ScrollView,
   Dimensions,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing } from "../src/theme";
-import { fetchMe, exchangeSessionId } from "../src/api";
+import {
+  fetchMe,
+  exchangeSessionId,
+  emailLogin,
+  emailRegister,
+  appleLogin,
+} from "../src/api";
 
 // Hero: dramatic full-body action surfing photograph
 const HERO_IMAGE =
@@ -28,6 +36,65 @@ export default function LoginScreen() {
   const [checking, setChecking] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [isRegister, setIsRegister] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "ios") {
+      AppleAuthentication.isAvailableAsync()
+        .then(setAppleAvailable)
+        .catch(() => setAppleAvailable(false));
+    }
+  }, []);
+
+  const onEmailSubmit = async () => {
+    if (!email.trim() || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+    setError(null);
+    setEmailBusy(true);
+    try {
+      if (isRegister) {
+        await emailRegister(email.trim(), password);
+      } else {
+        await emailLogin(email.trim(), password);
+      }
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      setError(e?.message || "Login failed. Please try again.");
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const onAppleSignIn = async () => {
+    setError(null);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) throw new Error("No identity token");
+      const fullName = [
+        credential.fullName?.givenName,
+        credential.fullName?.familyName,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      await appleLogin(credential.identityToken, fullName || null, credential.email);
+      router.replace("/(tabs)");
+    } catch (e: any) {
+      if (e?.code === "ERR_REQUEST_CANCELED") return; // user cancelled
+      setError(e?.message || "Apple sign-in failed. Please try again.");
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -166,6 +233,85 @@ export default function LoginScreen() {
               </>
             )}
           </TouchableOpacity>
+
+          {appleAvailable && (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={
+                AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+              }
+              buttonStyle={
+                AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+              }
+              cornerRadius={10}
+              style={styles.appleBtn}
+              onPress={onAppleSignIn}
+            />
+          )}
+
+          {!showEmailForm ? (
+            <TouchableOpacity
+              style={styles.emailToggleBtn}
+              onPress={() => setShowEmailForm(true)}
+              testID="show-email-login-btn"
+            >
+              <Ionicons
+                name="mail-outline"
+                size={16}
+                color={colors.textMuted}
+                style={{ marginRight: 8 }}
+              />
+              <Text style={styles.emailToggleText}>
+                Continue with Email
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.emailForm}>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+                testID="email-input"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Password (min 8 characters)"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+                testID="password-input"
+              />
+              <TouchableOpacity
+                style={styles.emailSubmitBtn}
+                onPress={onEmailSubmit}
+                disabled={emailBusy}
+                testID="email-submit-btn"
+              >
+                {emailBusy ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <Text style={styles.signInText}>
+                    {isRegister ? "Create Account" : "Log In"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setIsRegister(!isRegister)}
+                testID="toggle-register-btn"
+              >
+                <Text style={styles.emailToggleText}>
+                  {isRegister
+                    ? "Already have an account? Log in"
+                    : "New here? Create an account"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <Text style={styles.legal}>
             Your video clips stay private to your account.
@@ -529,6 +675,45 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
     letterSpacing: 0.5,
+  },
+  appleBtn: {
+    height: 50,
+    marginTop: spacing.sm,
+  },
+  emailToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    marginTop: spacing.sm,
+    minHeight: 44,
+  },
+  emailToggleText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 8,
+  },
+  emailForm: {
+    marginTop: spacing.sm,
+  },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    borderRadius: 4,
+    color: "#fff",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    fontSize: 15,
+    marginBottom: spacing.sm,
+  },
+  emailSubmitBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 15,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
   },
   legal: {
     color: colors.textMuted,

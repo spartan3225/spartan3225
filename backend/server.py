@@ -14,7 +14,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 import httpx
 
 from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
@@ -369,6 +369,162 @@ async def exchange_session(req: SessionExchangeRequest):
     )
 
     return AuthResponse(session_token=session_token, user=_user_to_model(user_doc))
+
+
+# ---- Email/password + Sign in with Apple auth ----
+from pwdlib import PasswordHash
+
+_password_hasher = PasswordHash.recommended()
+
+
+def _new_session_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(32)
+
+
+async def _create_session(user_id: str) -> str:
+    token = _new_session_token()
+    await db.user_sessions.insert_one(
+        {
+            "user_id": user_id,
+            "session_token": token,
+            "expires_at": datetime.now(timezone.utc) + timedelta(days=7),
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+    return token
+
+
+class EmailRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=64)
+    name: Optional[str] = None
+
+
+class EmailLoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=64)
+
+
+@api_router.post("/auth/register", response_model=AuthResponse)
+async def email_register(req: EmailRegisterRequest):
+    email = req.email.lower().strip()
+    existing = await db.users.find_one({"email": email}, {"_id": 0})
+    if existing and existing.get("password_hash"):
+        raise HTTPException(
+            status_code=409, detail="An account with this email already exists. Please log in."
+        )
+    password_hash = _password_hasher.hash(req.password)
+    if existing:
+        # Google-created account adding a password — link, don't duplicate
+        await db.users.update_one(
+            {"user_id": existing["user_id"]}, {"$set": {"password_hash": password_hash}}
+        )
+        user_doc = existing
+    else:
+        user_doc = {
+            "user_id": f"user_{uuid.uuid4().hex[:12]}",
+            "email": email,
+            "name": (req.name or email.split("@")[0]).strip(),
+            "picture": None,
+            "password_hash": password_hash,
+            "created_at": datetime.now(timezone.utc),
+            "tier": "free",
+            "subscription_status": None,
+            "subscription_expires_at": None,
+            "coach_bio": None,
+            "coach_specialty": None,
+            "coach_location": None,
+            "coach_public": False,
+        }
+        await db.users.insert_one(dict(user_doc))
+    token = await _create_session(user_doc["user_id"])
+    return AuthResponse(session_token=token, user=_user_to_model(user_doc))
+
+
+@api_router.post("/auth/login", response_model=AuthResponse)
+async def email_login(req: EmailLoginRequest):
+    email = req.email.lower().strip()
+    user_doc = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user_doc or not user_doc.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    try:
+        ok = _password_hasher.verify(req.password, user_doc["password_hash"])
+    except Exception:
+        ok = False
+    if not ok:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user_doc = await _refresh_tier_if_expired(user_doc)
+    token = await _create_session(user_doc["user_id"])
+    return AuthResponse(session_token=token, user=_user_to_model(user_doc))
+
+
+APPLE_AUDIENCES = [
+    a.strip() for a in os.environ.get("APPLE_AUDIENCES", "").split(",") if a.strip()
+]
+_apple_jwks_client = None
+
+
+class AppleLoginRequest(BaseModel):
+    identity_token: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+
+
+@api_router.post("/auth/apple", response_model=AuthResponse)
+async def apple_login(req: AppleLoginRequest):
+    import jwt as pyjwt
+    from jwt import PyJWKClient
+
+    global _apple_jwks_client
+    if _apple_jwks_client is None:
+        _apple_jwks_client = PyJWKClient("https://appleid.apple.com/auth/keys")
+    try:
+        signing_key = _apple_jwks_client.get_signing_key_from_jwt(req.identity_token)
+        claims = pyjwt.decode(
+            req.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=APPLE_AUDIENCES,
+            issuer="https://appleid.apple.com",
+        )
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Apple identity token")
+
+    apple_sub = claims["sub"]
+    token_email = (claims.get("email") or req.email or "").lower().strip() or None
+
+    user_doc = await db.users.find_one({"apple_sub": apple_sub}, {"_id": 0})
+    if not user_doc and token_email:
+        # Link to an existing Google/email account with the same email
+        user_doc = await db.users.find_one({"email": token_email}, {"_id": 0})
+        if user_doc:
+            await db.users.update_one(
+                {"user_id": user_doc["user_id"]}, {"$set": {"apple_sub": apple_sub}}
+            )
+    if not user_doc:
+        name = (req.name or (token_email.split("@")[0] if token_email else "Surfer")).strip()
+        user_doc = {
+            "user_id": f"user_{uuid.uuid4().hex[:12]}",
+            "email": token_email or f"{apple_sub}@privaterelay.appleid.com",
+            "name": name,
+            "picture": None,
+            "apple_sub": apple_sub,
+            "created_at": datetime.now(timezone.utc),
+            "tier": "free",
+            "subscription_status": None,
+            "subscription_expires_at": None,
+            "coach_bio": None,
+            "coach_specialty": None,
+            "coach_location": None,
+            "coach_public": False,
+        }
+        await db.users.insert_one(dict(user_doc))
+    else:
+        user_doc = await _refresh_tier_if_expired(user_doc)
+    token = await _create_session(user_doc["user_id"])
+    return AuthResponse(session_token=token, user=_user_to_model(user_doc))
 
 
 @api_router.get("/auth/me", response_model=User)

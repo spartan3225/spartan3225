@@ -177,6 +177,20 @@ export default function PaywallScreen() {
               </TouchableOpacity>
             ) : null}
 
+            {Platform.OS !== "web" && (
+              <View style={styles.nativeNote} testID="native-subscription-note">
+                <Ionicons
+                  name="information-circle-outline"
+                  size={16}
+                  color={colors.textMuted}
+                />
+                <Text style={styles.nativeNoteText}>
+                  Subscriptions are managed from your SurfCoach23 account on
+                  the web. Your active plan is shown below.
+                </Text>
+              </View>
+            )}
+
             {sortedPlans.map((plan) => {
               const isFree = plan.plan_id === "free";
               const isCurrent = me?.tier === plan.plan_id;
@@ -194,7 +208,7 @@ export default function PaywallScreen() {
                     active={isCurrent}
                     testID={`plan-${plan.plan_id}`}
                   />
-                  {!isFree && (
+                  {!isFree && Platform.OS === "web" && (
                     <TouchableOpacity
                       style={[
                         isCoach ? styles.coachCta : styles.planCta,
@@ -244,7 +258,7 @@ export default function PaywallScreen() {
                         color={colors.success}
                       />
                       <Text style={styles.currentText}>
-                        You're on this plan
+                        You&apos;re on this plan
                       </Text>
                     </View>
                   ) : null}
@@ -252,10 +266,12 @@ export default function PaywallScreen() {
               );
             })}
 
-            <Text style={styles.legal}>
-              Secure checkout via Stripe. Cancel renewal anytime from your
-              profile.
-            </Text>
+            {Platform.OS === "web" && (
+              <Text style={styles.legal}>
+                Secure checkout via LemonSqueezy. Cancel renewal anytime from
+                your profile.
+              </Text>
+            )}
           </>
         )}
       </ScrollView>
@@ -378,6 +394,23 @@ const styles = StyleSheet.create({
   },
   cardHighlight: { borderColor: colors.primary, borderWidth: 2 },
   cardAccent: { borderColor: colors.borderStrong },
+  nativeNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: 6,
+  },
+  nativeNoteText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 17,
+  },
   planCta: {
     marginHorizontal: spacing.lg,
     borderWidth: 1,

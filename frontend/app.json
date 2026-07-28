@@ -12,6 +12,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.surfcoach23.app",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Record surfing clips for AI analysis",
         "NSPhotoLibraryUsageDescription": "Pick surfing videos to analyse",
