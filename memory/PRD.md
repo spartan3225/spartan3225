@@ -155,6 +155,18 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - Stored in /app/frontend/public/store-assets/ (auto-included in every expo web export -> served at /store-assets/ on preview and, after re-publish, on the live domain).
 - Demo analysis seeded locally: ana_ipadshot001 for user_demo_12345 (status ready, real 5MB surf mp4 copied to their upload dir) - reusable for future marketing shots.
 
+## Phase 1 Premium Upgrade — "Most advanced AI surf coach" (July 2026)
+User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT breaking existing features. Phased plan agreed: P1 UI redesign + advanced AI Review (DONE), P2 skeleton tracking + overlay drawing, P3 deep Progress/Train, P4 pro comparison mode (Yago Dora — user has no licensed footage, build ready, footage later). User confirmed server resources upgraded.
+- New 5-tab nav: Home / AI Review / Progress / Train / Profile (upload hidden at (tabs)/upload, all old routes preserved). Glass tab bar (BlurView on iOS) + haptics.
+- Backend AI schema extended (backwards compatible optional fields on analyses): `scores` (14 categories: surf_flow, take_off, bottom_turn, top_turn, compression, recovery, rail_control, speed_generation, power, timing, balance, style, body_position, wave_reading — each {key,value,note}), `main_mistake` {title,why,cause,performance_lost,fix,timestamp}, `key_moments` [{timestamp,label,type good|bad|neutral}]. Corrections now exactly top-5. Sanitizers `_sanitize_scores/_sanitize_key_moments` in server.py.
+- Multi-language (en/es/pt/fr/ru/ar): `/app/frontend/src/i18n.tsx` (I18nProvider + AsyncStorage), language picker chips in Profile; PUT /api/users/preferences {language} stores `preferred_language` on user; AI prompts append language instruction so Gemini+Claude reply in user's language.
+- Redesigned analysis/[id].tsx: custom video controls (play/pause, speed 1x/0.5x/0.25x, frame-step ±1/30s), clickable Key Moments chips seek video, overall ScoreRing, 14 sub-score ring grid, strengths card, Main Mistake card, top-5 numbered corrections; comments/share/polling/failed-banner preserved.
+- New shared components: src/components/ScoreRing.tsx (SVG), GlassCard.tsx, Skeleton.tsx; src/haptics.ts; src/trainLibrary.ts (10 drills, 5 categories, i18n'd, mapped to score categories for personalization).
+- Progress tab: headline ring + delta pill, SVG trend chart (last 10), skill evolution bars w/ deltas vs previous analysis, AI summary. Train tab: personalized plan (weakest 3 skills → matched drills + AI drills from last analysis), filterable drill grid.
+- Seeded demo analysis with full new schema: `ana_demoupgrade01` (user_demo_12345). Old `ana_ipadshot001` kept as backwards-compat fixture.
+- Verified: testing_agent iteration_18 (17/17 backend + full frontend E2E incl. language switch, old-schema render, video controls). Web export regenerated to /app/backend/static_web (user must Re-publish for live site).
+- NOTE: new analyses must be run to see the new scores/key_moments (old ones show legacy layout).
+
 ## Stuck-analysis + logout fixes (June 2026)
 - Analysis page now polls every 5s while processing; auto-updates to ready/failed; failed banner with 'quota not used' + UPLOAD AGAIN button; score pill only when ready.
 - Backend: lazy stale watchdog on GET /analyses/{id} (processing >20min -> failed on read, replica-safe); AI pipeline hard timeout 900s.
