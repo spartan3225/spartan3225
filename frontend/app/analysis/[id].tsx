@@ -62,6 +62,21 @@ export default function AnalysisDetail() {
     })();
   }, [id]);
 
+  // Poll while the AI is still working so the page updates itself the
+  // moment the analysis is ready (or failed) — no manual refresh needed.
+  useEffect(() => {
+    if (!id || !data || data.status !== "processing") return;
+    const timer = setInterval(async () => {
+      try {
+        const d = await getAnalysis(id);
+        if (d.status !== "processing") {
+          setData(d);
+        }
+      } catch {}
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [id, data]);
+
   const player = useVideoPlayer(videoUrl || null, (p) => {
     p.loop = true;
   });
@@ -122,25 +137,63 @@ export default function AnalysisDetail() {
         </View>
 
         {/* Title + Score */}
+        {data.status === "processing" && (
+          <View style={styles.statusBanner} testID="processing-banner">
+            <ActivityIndicator size="small" color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.statusTitle}>AI COACH IS ANALYSING…</Text>
+              <Text style={styles.statusSub}>
+                Usually takes 1–3 minutes. This page updates automatically —
+                you can also come back later, your result will be saved.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {data.status === "failed" && (
+          <View style={[styles.statusBanner, styles.statusBannerError]} testID="failed-banner">
+            <Ionicons name="alert-circle" size={22} color={colors.error} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.statusTitle, { color: colors.error }]}>
+                ANALYSIS FAILED
+              </Text>
+              <Text style={styles.statusSub}>
+                Something went wrong while analysing this clip. Your quota was
+                NOT used — please upload the clip again. If it keeps failing,
+                try a shorter clip (5–60s) or email surfcoach23@gmail.com.
+              </Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => router.replace("/(tabs)/upload")}
+                testID="retry-upload-btn"
+              >
+                <Text style={styles.retryText}>UPLOAD AGAIN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={styles.headerBox}>
           <View style={{ flex: 1 }}>
             <Text style={styles.subtitleSmall}>
               {(data.overall_rating || "—").toUpperCase()}
             </Text>
             <Text style={styles.title} numberOfLines={2}>
-              {data.title}
+              {data.status === "failed" ? "Analysis failed" : data.title}
             </Text>
             <Text style={styles.summary}>{data.summary}</Text>
           </View>
-          <View style={styles.scorePill}>
-            <Text
-              style={[styles.scoreNum, { color: scoreColor(data.score) }]}
-              testID="analysis-score"
-            >
-              {data.score}
-            </Text>
-            <Text style={styles.scoreLabel}>SCORE</Text>
-          </View>
+          {data.status === "ready" && (
+            <View style={styles.scorePill}>
+              <Text
+                style={[styles.scoreNum, { color: scoreColor(data.score) }]}
+                testID="analysis-score"
+              >
+                {data.score}
+              </Text>
+              <Text style={styles.scoreLabel}>SCORE</Text>
+            </View>
+          )}
         </View>
 
         {/* Strengths */}
@@ -421,6 +474,49 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   video: { width: "100%", height: "100%" },
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    margin: spacing.lg,
+    marginBottom: 0,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+  },
+  statusBannerError: {
+    borderColor: colors.error,
+  },
+  statusTitle: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  statusSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  retryBtn: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.error,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 4,
+    minHeight: 40,
+    justifyContent: "center",
+  },
+  retryText: {
+    color: colors.error,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
   headerBox: {
     flexDirection: "row",
     padding: spacing.lg,

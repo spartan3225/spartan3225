@@ -1178,7 +1178,10 @@ async def _run_analysis_in_background(
         logger.exception("Background conversion step failed — using original file")
 
     try:
-        result = await analyse_video_with_gemini(save_path, mime, deep=deep)
+        # Hard timeout so an analysis can never hang forever
+        result = await asyncio.wait_for(
+            analyse_video_with_gemini(save_path, mime, deep=deep), timeout=900
+        )
     except Exception as e:
         logger.exception("AI analysis failed (background)")
         await db.analyses.update_one(
@@ -1231,6 +1234,38 @@ async def list_analyses(user: User = Depends(get_current_user)):
     return [AnalysisListItem(**i) for i in items]
 
 
+STALE_PROCESSING_MINUTES = 20
+
+
+async def _fail_if_stale(doc: dict) -> dict:
+    """Lazy watchdog: if a pod died mid-analysis, the doc stays 'processing'
+    forever. Detect it on read (works across replicas, no restart needed)."""
+    if doc.get("status") != "processing":
+        return doc
+    created = doc.get("created_at")
+    if isinstance(created, str):
+        try:
+            created = datetime.fromisoformat(created)
+        except ValueError:
+            return doc
+    if created is None:
+        return doc
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    if created < datetime.now(timezone.utc) - timedelta(minutes=STALE_PROCESSING_MINUTES):
+        await db.analyses.update_one(
+            {"analysis_id": doc["analysis_id"], "status": "processing"},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": "Analysis was interrupted. Please upload your clip again — this attempt did not use your quota.",
+                }
+            },
+        )
+        doc["status"] = "failed"
+    return doc
+
+
 @api_router.get("/analyses/{analysis_id}", response_model=AnalysisOut)
 async def get_analysis(analysis_id: str, user: User = Depends(get_current_user)):
     doc = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})
@@ -1239,6 +1274,7 @@ async def get_analysis(analysis_id: str, user: User = Depends(get_current_user))
     # Owner can always read; coach can read if shared with them
     if doc.get("user_id") != user.user_id and doc.get("shared_with_coach_id") != user.user_id:
         raise HTTPException(status_code=404, detail="Not found")
+    doc = await _fail_if_stale(doc)
     return AnalysisOut(**{k: doc[k] for k in AnalysisOut.model_fields if k in doc})
 
 

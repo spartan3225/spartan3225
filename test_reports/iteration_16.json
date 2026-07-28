@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 16 – analysis polling / lazy stale watchdog / AI timeout / logout ordering. Backend: 7/7 pytest passing (health, ready-doc regression, stale watchdog >20min -> failed with 'quota' error text, recent processing stays processing, owner-only access, logout invalidates session, finalize sanity). Frontend: polling ready-transition works (score 82 appears within ~10s without reload, processing banner gone), failed banner + UPLOAD AGAIN button visible after mark_failed + reload, retry-upload-btn navigates to /upload. LOGOUT partially works (token cleared client+server) but user is NOT visually taken to the landing page — clicking logout leaves the tabs UI on screen (route ambiguity: (tabs)/index.tsx and app/index.tsx both map to '/'). A hard reload after logout DOES correctly show landing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/(tabs)/profile.tsx onLogout",
+        "issue": "router.replace('/') after logout keeps the user visually inside the (tabs) group (Sessions screen renders instead of landing). Because app/(tabs)/index.tsx and app/index.tsx both resolve to '/', Expo Router keeps the current group. Only a hard page reload flips to landing. This IS the user-reported 'logout comes back the same' bug — the api.ts token-clear fix is necessary but NOT sufficient.",
+        "testID": "logout-btn",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "logout -> land on '/'",
+        "issue": "Immediately after tapping logout: url=/, session_token=null, but login-google-btn NOT visible; (tabs)/index.tsx (Sessions) is still shown. After page.reload() landing renders correctly (login-google-btn + login-screen visible).",
+        "affected_testIDs": ["logout-btn", "login-google-btn", "login-screen"]
+      }
+    ],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_analysis_polling_iter16.py",
+    "/app/test_reports/pytest/iteration_16_polling.xml"
+  ],
+  "action_items": [
+    "FIX logout navigation: in app/(tabs)/profile.tsx onLogout (and onDeleteAccount), force a hard route change out of the (tabs) group after clearing the token. Options: (a) on web use `window.location.href = '/'` after logout, on native `router.replace('/')`; (b) move the landing UI out of `app/index.tsx` into an explicit path like `app/(auth)/landing.tsx` and route there; (c) add a guard in `app/(tabs)/_layout.tsx` that redirects to '/' if `getToken()` is null. Without one of these the user-reported logout bug persists.",
+    "Optional: also invalidate any in-memory user state (Zustand/context if any) on logout so the tabs don't keep rendering user data while transitioning."
+  ],
+  "critical_code_review_comments": [
+    "app/index.tsx and app/(tabs)/index.tsx both map to '/' in Expo Router — this is the root cause of the logout routing bug. Consider disambiguating by moving landing to a named route (e.g., /welcome) or by making tabs redirect when unauthenticated.",
+    "Lazy stale watchdog (_fail_if_stale in server.py) is correct and idempotent (uses conditional update {status:'processing'}) — safe across replicas.",
+    "asyncio.wait_for(..., timeout=900) hard-caps AI pipeline — good; on timeout the doc is properly transitioned to 'failed' with the AI-analysis-failed summary (the copy shown in the UI failed banner comes from the frontend so still surfaces 'quota not used' text — OK).",
+    "api.ts logout() correctly clears local token FIRST, then best-effort backend call — matches spec; verified via test_logout_invalidates_session."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_analysis_polling_iter16.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "75%"},
+  "seed_data_creation": "Ephemeral: temporary session token TEST_tok_* and analysis doc TEST_ana_poll_001 created and cleaned up during tests. Re-seeded demo_token_active and demo_coach_token in user_sessions after the FE logout test consumed the demo session.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend stale watchdog + polling + failed-banner + finalize regression all pass. The remaining bug is a FRONTEND ROUTING issue with the logout flow: router.replace('/') from inside (tabs)/profile.tsx keeps the tabs UI on screen because (tabs)/index.tsx and app/index.tsx both resolve to '/'. Re-test with: token in localStorage -> open /profile -> click logout-btn -> IMMEDIATELY (before any reload) verify (a) login-google-btn is visible AND (b) 'YOUR SESSIONS' text is NOT visible. Also verify localStorage.session_token === null and page.reload() still keeps landing. If main agent adds a redirect guard in (tabs)/_layout.tsx or switches to window.location.href on web, this should pass. Note: running the FE logout test invalidates demo_token_active in DB — re-seed via test_credentials.md snippet between runs.",
+  "rca_of_issue": "USER-REPORTED LOGOUT BUG RCA: The api.ts fix (clear localStorage token first, then best-effort backend call) correctly invalidates the session on both client and server (verified with backend test test_logout_invalidates_session). HOWEVER, in `app/(tabs)/profile.tsx`, `onLogout` calls `router.replace('/')` AFTER logout. Because Expo Router treats `(tabs)` as a route group and BOTH `app/index.tsx` (landing) and `app/(tabs)/index.tsx` (Sessions) resolve to the URL `/`, the router keeps the user in the current group — so the Sessions tab renders instead of the landing screen. Observed: url=/, session_token=null, backend session deleted, but 'YOUR SESSIONS' UI is still on screen and 'Continue with Google' is NOT visible. A hard `page.reload()` correctly re-mounts and shows the landing page (fetchMe returns null -> setChecking(false) -> landing rendered). Reproduction: login with demo_token_active, tap logout — user still sees Sessions tab, exactly matching the user complaint 'logout comes back the same'. Mitigation options for main agent listed under action_items."
+}

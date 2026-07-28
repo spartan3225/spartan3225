@@ -170,12 +170,20 @@ export async function getAnalysis(id: string): Promise<Analysis> {
 }
 
 export async function logout(): Promise<void> {
-  try {
-    await apiFetch("/auth/logout", { method: "POST" });
-  } catch {
-    // ignore
-  }
+  // Clear the local token FIRST so the user is logged out even if the
+  // network call fails or the device is offline.
+  const token = await getToken();
   await clearToken();
+  if (token) {
+    try {
+      await fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // ignore
+    }
+  }
 }
 
 const CHUNK_SIZE = 3 * 1024 * 1024; // 3MB — safely under proxy body limits
