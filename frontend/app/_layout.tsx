@@ -2,11 +2,13 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { I18nProvider } from "../src/i18n";
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
       <SafeAreaProvider>
+        <I18nProvider>
         <StatusBar style="light" />
         <Stack
           screenOptions={{
@@ -31,6 +33,7 @@ export default function RootLayout() {
           <Stack.Screen name="coach-inbox" />
           <Stack.Screen name="manage-plan" />
         </Stack>
+        </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

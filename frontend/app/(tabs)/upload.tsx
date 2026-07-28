@@ -16,6 +16,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { uploadVideo } from "../../src/api";
 import { colors, spacing } from "../../src/theme";
+import { useI18n } from "../../src/i18n";
+import { haptic } from "../../src/haptics";
 
 type PickedAsset = {
   uri: string;
@@ -26,6 +28,7 @@ type PickedAsset = {
 
 export default function UploadScreen() {
   const router = useRouter();
+  const { t } = useI18n();
   const [asset, setAsset] = useState<PickedAsset | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -102,6 +105,7 @@ export default function UploadScreen() {
         asset.mimeType || "video/mp4",
         (pct) => setProgress(pct)
       );
+      haptic.success();
       router.replace(`/analysis/${result.analysis_id}` as any);
     } catch (e: any) {
       const m = String(e?.message || "");
@@ -124,11 +128,8 @@ export default function UploadScreen() {
             <View style={styles.brandDot} />
             <Text style={styles.brandLabel}>NEW · ANALYSIS</Text>
           </View>
-          <Text style={styles.heading}>DROP{"\n"}YOUR CLIP.</Text>
-          <Text style={styles.subheading}>
-            10–60 second wave clip works best. Front-on, side-on or follow cams
-            all welcome.
-          </Text>
+          <Text style={styles.heading}>{t("upload_title").toUpperCase()}</Text>
+          <Text style={styles.subheading}>{t("upload_sub")}</Text>
         </View>
 
         {/* Preview */}
@@ -149,7 +150,7 @@ export default function UploadScreen() {
                 size={42}
                 color={colors.primary}
               />
-              <Text style={styles.previewText}>No clip selected</Text>
+              <Text style={styles.previewText}>{t("no_clip")}</Text>
             </View>
           )}
           {submitting && (
@@ -157,8 +158,8 @@ export default function UploadScreen() {
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>
                 {progress < 100
-                  ? `UPLOADING... ${progress}%`
-                  : "AI COACH ANALYSING..."}
+                  ? `${t("uploading").toUpperCase()}... ${progress}%`
+                  : t("ai_analysing").toUpperCase()}
               </Text>
               <Text style={styles.loadingSub}>
                 {progress < 100
@@ -178,7 +179,7 @@ export default function UploadScreen() {
             testID="pick-gallery-btn"
           >
             <Ionicons name="images-outline" size={20} color={colors.primary} />
-            <Text style={styles.optionText}>Gallery</Text>
+            <Text style={styles.optionText}>{t("gallery")}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.optionBtn}
@@ -191,7 +192,7 @@ export default function UploadScreen() {
               size={20}
               color={colors.primary}
             />
-            <Text style={styles.optionText}>Record</Text>
+            <Text style={styles.optionText}>{t("record")}</Text>
           </TouchableOpacity>
         </View>
 
@@ -221,11 +222,11 @@ export default function UploadScreen() {
         </TouchableOpacity>
 
         <View style={styles.tipsBox}>
-          <Text style={styles.tipsLabel}>FOR BEST RESULTS</Text>
-          <Text style={styles.tip}>• Steady camera, ideally tripod or rail</Text>
-          <Text style={styles.tip}>• Surfer fills 30%+ of frame</Text>
-          <Text style={styles.tip}>• Capture pop-up to top-turn</Text>
-          <Text style={styles.tip}>• Keep clip under 60 seconds</Text>
+          <Text style={styles.tipsLabel}>{t("best_results").toUpperCase()}</Text>
+          <Text style={styles.tip}>• {t("tip1")}</Text>
+          <Text style={styles.tip}>• {t("tip2")}</Text>
+          <Text style={styles.tip}>• {t("tip3")}</Text>
+          <Text style={styles.tip}>• {t("tip4")}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -234,7 +235,7 @@ export default function UploadScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: 64 },
+  content: { padding: spacing.lg, paddingBottom: 120 },
   header: { marginBottom: spacing.lg },
   brandRow: {
     flexDirection: "row",

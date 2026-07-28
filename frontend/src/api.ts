@@ -67,6 +67,7 @@ export type User = {
   coach_specialty?: string | null;
   coach_location?: string | null;
   coach_public?: boolean;
+  preferred_language?: string;
 };
 
 export type AnalysisListItem = {
@@ -86,6 +87,21 @@ export type Mistake = {
   timestamp?: string | null;
 };
 
+export type ScoreItem = { key: string; value: number; note?: string };
+export type MainMistake = {
+  title?: string;
+  why?: string;
+  cause?: string;
+  performance_lost?: string;
+  fix?: string;
+  timestamp?: string | null;
+};
+export type KeyMoment = {
+  timestamp: string;
+  label: string;
+  type: "good" | "bad" | "neutral" | string;
+};
+
 export type Analysis = {
   analysis_id: string;
   user_id: string;
@@ -98,9 +114,13 @@ export type Analysis = {
   corrections: string[];
   tips: string[];
   drills: string[];
+  scores?: ScoreItem[] | null;
+  main_mistake?: MainMistake | null;
+  key_moments?: KeyMoment[] | null;
   duration_seconds?: number | null;
   status: string;
   created_at: string;
+  shared_with_coach_id?: string | null;
 };
 
 export async function exchangeSessionId(sessionId: string) {
@@ -498,6 +518,13 @@ export async function coachInbox(): Promise<AnalysisListItem[]> {
 }
 
 // ---- Account + plan management ----
+export async function updatePreferences(language: string) {
+  return apiFetch<User>("/users/preferences", {
+    method: "PUT",
+    body: JSON.stringify({ language }),
+  });
+}
+
 export async function deleteAccount() {
   return apiFetch<{ ok: boolean }>("/auth/account", { method: "DELETE" });
 }

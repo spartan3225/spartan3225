@@ -18,16 +18,20 @@ import {
   listAnalyses,
   logout,
   deleteAccount,
+  updatePreferences,
   User,
   getQuota,
   Quota,
 } from "../../src/api";
 import { colors, scoreColor, spacing } from "../../src/theme";
+import { useI18n, LANGUAGES, Lang } from "../../src/i18n";
+import { haptic } from "../../src/haptics";
 
 const BG =
   "https://images.unsplash.com/photo-1618502396341-5c680e7d7233?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwxfHxkYXJrJTIwb2NlYW4lMjB3YXZlJTIwdGV4dHVyZXxlbnwwfHx8fDE3NzgyMzYwOTd8MA&ixlib=rb-4.1.0&q=85";
 
 export default function ProfileScreen() {
+  const { t, lang, setLang } = useI18n();
   const router = useRouter();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -122,7 +126,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]} testID="profile-screen">
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
         <ImageBackground source={{ uri: BG }} style={styles.headerBg}>
           <View style={styles.headerOverlay} />
           <View style={styles.headerContent}>
@@ -299,7 +303,35 @@ export default function ProfileScreen() {
             />
           </TouchableOpacity>
 
-          <Text style={styles.sectionLabel}>Performance</Text>
+          <Text style={styles.sectionLabel}>{t("language")}</Text>
+          <View style={styles.langGrid} testID="language-picker">
+            {LANGUAGES.map((l) => {
+              const active = lang === l.code;
+              return (
+                <TouchableOpacity
+                  key={l.code}
+                  style={[styles.langChip, active && styles.langChipActive]}
+                  onPress={() => {
+                    haptic.tap();
+                    setLang(l.code as Lang);
+                    updatePreferences(l.code).catch(() => {});
+                  }}
+                  testID={`lang-${l.code}`}
+                >
+                  <Text style={styles.langFlag}>{l.flag}</Text>
+                  <Text
+                    style={[styles.langText, active && { color: "#000" }]}
+                    numberOfLines={1}
+                  >
+                    {l.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.langNote}>{t("language_note")}</Text>
+
+          <Text style={styles.sectionLabel}>{t("performance")}</Text>
           <View style={styles.bento}>
             <View style={[styles.bentoCard, styles.bentoBig]}>
               <Text style={styles.bentoLabel}>Avg Score</Text>
@@ -387,6 +419,32 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  langGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
+  langChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    backgroundColor: colors.glass,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  langChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  langFlag: { fontSize: 13 },
+  langText: { color: colors.textPrimary, fontSize: 12, fontWeight: "700" },
+  langNote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 15,
+    marginBottom: spacing.lg,
+  },
   container: { flex: 1, backgroundColor: colors.background },
   center: { alignItems: "center", justifyContent: "center" },
   headerBg: { height: 240 },

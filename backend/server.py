@@ -127,6 +127,7 @@ class User(BaseModel):
     coach_specialty: Optional[str] = None
     coach_location: Optional[str] = None
     coach_public: bool = False
+    preferred_language: str = "en"
 
 
 class SessionExchangeRequest(BaseModel):
@@ -157,6 +158,9 @@ class AnalysisOut(BaseModel):
     corrections: List[str]
     tips: List[str]
     drills: List[str]
+    scores: Optional[List[dict]] = None
+    main_mistake: Optional[dict] = None
+    key_moments: Optional[List[dict]] = None
     duration_seconds: Optional[float] = None
     status: str
     created_at: datetime
@@ -589,10 +593,32 @@ Return ONLY valid JSON (no markdown fences, no commentary) matching this schema 
   ],
   "corrections": ["<actionable fix referencing body mechanics>", "..."],
   "tips": ["<world-tour-style tip>", "..."],
-  "drills": ["<concrete drill: dry-land, balance-board or in-water>", "..."]
+  "drills": ["<concrete drill: dry-land, balance-board or in-water>", "..."],
+  "scores": [
+    {"key": "<one of: surf_flow, take_off, bottom_turn, top_turn, compression, recovery, rail_control, speed_generation, power, timing, balance, style, body_position, wave_reading>",
+     "value": <integer 0-100>,
+     "note": "<very short verdict, max 6 words, e.g. 'Strong drive off the bottom'>"}
+  ],
+  "main_mistake": {
+    "title": "<short name of the SINGLE biggest mistake>",
+    "why": "<WHY it is a mistake, 1-2 sentences>",
+    "cause": "<WHAT caused it biomechanically, 1-2 sentences>",
+    "performance_lost": "<estimate of performance/score lost, e.g. 'Roughly 15 points of flow lost'>",
+    "fix": "<HOW to fix it, 1-2 concrete sentences>",
+    "timestamp": "<mm:ss or null>"
+  },
+  "key_moments": [
+    {"timestamp": "<mm:ss>", "label": "<3-5 word moment name, e.g. 'Powerful Bottom Turn'>", "type": "<good|bad|neutral>"}
+  ]
 }
 
-Provide AT LEAST 3 mistakes (or fewer if surfing is exceptional), 3 corrections, 3 tips, 2 drills."""
+Provide AT LEAST 3 mistakes (or fewer if surfing is exceptional), EXACTLY 5 corrections
+(the top-5 most impactful, ordered by impact), 3 tips, 2 drills.
+"scores" MUST contain ALL 14 categories listed above — score each honestly even if
+barely visible (use your best estimate). Only include a maneuver-specific category as
+0 with note "Not attempted" if truly absent.
+"key_moments" MUST contain 4-8 entries covering the whole clip chronologically with
+accurate mm:ss timestamps within the actual clip duration."""
 
 SYSTEM_PROMPT_COACH_EXTRA = """
 
@@ -616,7 +642,30 @@ def _strip_json(text: str) -> str:
     return text
 
 
-async def _refine_with_claude(raw_analysis: dict, deep: bool = False) -> dict:
+LANGUAGE_NAMES = {
+    "en": "English",
+    "ar": "Arabic",
+    "fr": "French",
+    "ru": "Russian",
+    "es": "Spanish",
+    "pt": "Portuguese",
+}
+
+
+def _lang_instruction(lang: str) -> str:
+    name = LANGUAGE_NAMES.get(lang, "English")
+    if name == "English":
+        return ""
+    return (
+        f"\n\nCRITICAL LANGUAGE RULE: Write ALL human-readable string values "
+        f"(title, summary, strengths, mistake details, corrections, tips, drills, "
+        f"score notes, main_mistake texts, key_moment labels) in {name}. "
+        f"Keep JSON keys, 'severity', score 'key' values, key_moment 'type' and "
+        f"'overall_rating' in English."
+    )
+
+
+async def _refine_with_claude(raw_analysis: dict, deep: bool = False, lang: str = "en") -> dict:
     """Polish Gemini's surf-analysis JSON using Claude Sonnet 4.6.
 
     Best-effort: if Claude fails for any reason, we return the original Gemini
@@ -630,8 +679,12 @@ async def _refine_with_claude(raw_analysis: dict, deep: bool = False) -> dict:
         "Rules:\n"
         " - Output ONLY valid JSON, no prose, no markdown fences.\n"
         " - Keep the SAME keys: title, score, overall_rating, summary, strengths, "
-        "mistakes, corrections, tips, drills.\n"
+        "mistakes, corrections, tips, drills, scores, main_mistake, key_moments.\n"
         " - `mistakes` items must keep keys: title, detail, severity, timestamp.\n"
+        " - `scores` items must keep keys: key, value, note (all 14 categories).\n"
+        " - `main_mistake` must keep keys: title, why, cause, performance_lost, fix, timestamp.\n"
+        " - `key_moments` items must keep keys: timestamp, label, type. Do NOT change timestamps.\n"
+        " - `corrections` must be EXACTLY the top 5, ordered by impact.\n"
         " - score: int 0-100. overall_rating: one of "
         "[Beginner, Intermediate, Advanced, Pro].\n"
         " - Tighten wording. Cut filler. Use surf-coach voice (e.g. 'plant your "
@@ -641,6 +694,7 @@ async def _refine_with_claude(raw_analysis: dict, deep: bool = False) -> dict:
         "any clue (title, summary, score) — do NOT just echo the draft.\n"
         + ("\n - DEEP MODE: add more technical detail per item (3-5 sentences each)."
            if deep else "")
+        + _lang_instruction(lang)
     )
 
     draft_json = json.dumps(raw_analysis, ensure_ascii=False, indent=2)
@@ -672,14 +726,18 @@ async def _refine_with_claude(raw_analysis: dict, deep: bool = False) -> dict:
 
 
 async def analyse_video_with_gemini(
-    file_path: Path, mime_type: str, deep: bool = False
+    file_path: Path, mime_type: str, deep: bool = False, lang: str = "en"
 ) -> dict:
     """Try Gemini 2.5 Pro first; fall back to Gemini 2.0 Flash on 400 BadRequest.
 
     After getting a draft from Gemini, refine it through Claude Sonnet 4.6
     for a more polished, coach-quality response.
     """
-    sys_msg = SYSTEM_PROMPT_BASE + (SYSTEM_PROMPT_COACH_EXTRA if deep else "")
+    sys_msg = (
+        SYSTEM_PROMPT_BASE
+        + (SYSTEM_PROMPT_COACH_EXTRA if deep else "")
+        + _lang_instruction(lang)
+    )
     video_file = FileContentWithMimeType(
         file_path=str(file_path), mime_type=mime_type
     )
@@ -747,11 +805,29 @@ async def analyse_video_with_gemini(
         raise last_error or Exception("Gemini analysis failed")
 
     # Hybrid step: Claude refines Gemini's draft for coach-quality output.
-    polished = await _refine_with_claude(draft, deep=deep)
+    polished = await _refine_with_claude(draft, deep=deep, lang=lang)
     return polished
 
 
 # ---------------- Analysis routes ----------------
+class PreferencesUpdate(BaseModel):
+    language: str
+
+
+@api_router.put("/users/preferences", response_model=User)
+async def update_preferences(
+    payload: PreferencesUpdate, user: User = Depends(get_current_user)
+):
+    lang = payload.language.lower().strip()
+    if lang not in LANGUAGE_NAMES:
+        raise HTTPException(status_code=400, detail="Unsupported language")
+    await db.users.update_one(
+        {"user_id": user.user_id}, {"$set": {"preferred_language": lang}}
+    )
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0})
+    return _user_to_model(doc)
+
+
 @api_router.get("/analyses/quota")
 async def get_quota(user: User = Depends(get_current_user)):
     # Free tier: lifetime cap (1 analysis ever) — not daily.
@@ -1070,6 +1146,7 @@ async def _finalize_and_start_analysis(
             mime=mime,
             deep=(user.tier == "coach"),
             ext=ext,
+            lang=(user.preferred_language or "en"),
         )
     )
 
@@ -1159,7 +1236,12 @@ async def _store_video_in_gridfs(analysis_id: str, path: Path) -> None:
 
 
 async def _run_analysis_in_background(
-    analysis_id: str, save_path: Path, mime: str, deep: bool, ext: str = "mp4"
+    analysis_id: str,
+    save_path: Path,
+    mime: str,
+    deep: bool,
+    ext: str = "mp4",
+    lang: str = "en",
 ) -> None:
     """Convert (if needed) then run Gemini + Claude pipeline and update the doc.
 
@@ -1180,7 +1262,8 @@ async def _run_analysis_in_background(
     try:
         # Hard timeout so an analysis can never hang forever
         result = await asyncio.wait_for(
-            analyse_video_with_gemini(save_path, mime, deep=deep), timeout=900
+            analyse_video_with_gemini(save_path, mime, deep=deep, lang=lang),
+            timeout=900,
         )
     except Exception as e:
         logger.exception("AI analysis failed (background)")
@@ -1210,8 +1293,50 @@ async def _run_analysis_in_background(
         "corrections": _coerce_str_list(result.get("corrections")),
         "tips": _coerce_str_list(result.get("tips")),
         "drills": _coerce_str_list(result.get("drills")),
+        "scores": _sanitize_scores(result.get("scores")),
+        "main_mistake": result.get("main_mistake")
+        if isinstance(result.get("main_mistake"), dict)
+        else None,
+        "key_moments": _sanitize_key_moments(result.get("key_moments")),
     }
     await db.analyses.update_one({"analysis_id": analysis_id}, {"$set": update})
+
+
+def _sanitize_scores(raw) -> list:
+    """Keep only well-formed {key, value, note} entries."""
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        try:
+            value = max(0, min(100, int(item.get("value"))))
+        except (TypeError, ValueError):
+            continue
+        if not key:
+            continue
+        out.append({"key": key, "value": value, "note": str(item.get("note") or "")[:120]})
+    return out
+
+
+def _sanitize_key_moments(raw) -> list:
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        ts = str(item.get("timestamp") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if not ts or not label:
+            continue
+        mtype = str(item.get("type") or "neutral").lower()
+        if mtype not in ("good", "bad", "neutral"):
+            mtype = "neutral"
+        out.append({"timestamp": ts, "label": label[:80], "type": mtype})
+    return out[:10]
 
 
 @api_router.get("/analyses", response_model=List[AnalysisListItem])

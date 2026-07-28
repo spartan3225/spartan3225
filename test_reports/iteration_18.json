@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 18 — Phase 1 premium upgrade (5-tab nav + redesigned AI Review + i18n + Progress/Train tabs + PUT /users/preferences) verified END-TO-END on both backend and frontend. Backend: 17/17 pytest cases pass in /app/backend/tests/test_phase1_upgrade_iter18.py (auth/me, preferences en/es/pt/invalid/no-auth, ana_demoupgrade01 returns scores(14)+main_mistake(title/why/cause/performance_lost/fix)+key_moments(timestamp/label/type), ana_ipadshot001 returns 200 with those fields null/empty i.e. backwards-compatible, list_analyses, quota, plans, comments GET/POST (field is `text`), chunked-upload auth+validation). Frontend: all 5 tabs render with correct testIDs (dashboard-screen, review-screen, progress-screen, train-screen, profile-screen); Home shows latest-session-card + hero CTA + dashboard-new-analysis-btn (routes to /upload); AI Review lists sessions and review-new-analysis-btn works; Progress shows progress-headline (score ring 78), score-trend-chart, skill-evolution bars; Train shows personalized-plan and cat-all/cat-surf/cat-land/cat-balance/cat-mobility chips (cat-surf tap OK, drill grid updates); Profile language-picker: tapping lang-es fires PUT /api/users/preferences (captured) and UI switches to Spanish (Perfil/Inicio/Análisis IA/Idioma visible), lang-en reverts. Analysis /analysis/ana_demoupgrade01 new-schema screen: play-pause-btn + speed-btn cycles 1x→0.5x, frame-back/fwd-btn present, scores-grid rendered with 14 sub-scores, strengths-section (WHAT YOU DID WELL), main-mistake-section with all fields, corrections-section shows exactly 5 numbered items (verified 1..5 all present), key-moments-section with clickable chips (key-moment-0 tap OK — seeks video), comments-section preserved. Old-schema /analysis/ana_ipadshot001 renders without crash — scores-grid/key-moments-section/main-mistake-section correctly NOT rendered, strengths/corrections/comments still render.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "expo-av (implicit / legacy)", "issue": "Console shows 'Image: style.resizeMode is deprecated. Please use props.resizeMode' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — non-blocking react-native-web deprecation warnings surfaced by the new Progress/Train/Home cards. No crash but should be cleaned up. Reference: /app/frontend/app/(tabs)/index.tsx and progress.tsx (Image style.resizeMode); check GlassCard / animated overlays for pointerEvents prop usage."},
+      {"component": "video controls (analysis screen)", "issue": "The <Video> element's testID='analysis-video' does not propagate to the underlying HTML <video> tag on react-native-web, so [data-testid=\"analysis-video\"] cannot be queried in Playwright. Video itself renders and controls (play-pause-btn, speed-btn, key-moments) work correctly — this is only a testability nit. Reference: /app/frontend/app/analysis/[id].tsx:197. Consider wrapping the Video in a <View testID=\"analysis-video\"> so the id lands on the DOM."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase1_upgrade_iter18.py",
+    "/app/test_reports/pytest/iteration_18_phase1.xml"
+  ],
+  "action_items": [
+    "(optional cleanup) Migrate Image style.resizeMode → props.resizeMode and pointerEvents prop → style.pointerEvents to silence RN 0.74+ deprecation warnings on web.",
+    "(optional testability) Wrap Video in a testID'd View so 'analysis-video' resolves on react-native-web."
+  ],
+  "critical_code_review_comments": [
+    "server.py PreferencesUpdate + LANGUAGE_NAMES cleanly rejects unsupported codes with 400 and persists preferred_language on user; endpoint is auth-gated. Good.",
+    "AnalysisOut declares scores/main_mistake/key_moments as Optional and pipeline sanitises via _sanitize_scores/_sanitize_key_moments — old docs return the fields as None which the frontend correctly treats as 'don't render section'. Backwards-compat is solid.",
+    "server.py is 2060 lines — approaching the 700-line split threshold from the style guide. Consider splitting into routers (auth, analyses, comments, payments, coaches) in a future pass. Not blocking Phase 1.",
+    "Frontend analysis/[id].tsx is 1019 lines and profile.tsx 694 lines — same recommendation. Reusable components (ScoreRing, GlassCard already exist) could absorb more from these screens."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase1_upgrade_iter18.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all requested flows verified)"},
+  "seed_data_creation": "No new seed data created. Verified ana_demoupgrade01 (new schema, owner user_demo_12345, status=ready), ana_ipadshot001 (old schema, owner user_demo_12345, status=ready) and demo_token_active session all present in MongoDB. Preferences endpoint left user.preferred_language='en' at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 1 premium upgrade is GREEN. Backend regression suite for it lives in /app/backend/tests/test_phase1_upgrade_iter18.py — 17 tests, ~2.3s. Comments API field is 'text' (not 'body') and /api/plans returns a dict with a 'plans' array (not a bare list) — worth remembering for future tests. Free demo user's lifetime quota is used (POST /api/analyses returns 402 by design). For frontend Playwright, mobile viewport 390x844, seed session via localStorage.setItem('session_token','demo_token_active') then goto('/'). testIDs are stable and thorough across all 5 tabs and the analysis detail screen; only the Video component's testID does not surface to the DOM on web.",
+  "rca_of_issue": "N/A — no bugs found in this iteration."
+}
