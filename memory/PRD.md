@@ -124,3 +124,11 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - Fixed: SEC-001 quota race (post-insert guard w/ rollback -> 402), SEC-002 upload caps (8MB/chunk 413, <=100 chunks, 300MB total 413 in finalize+legacy), SEC-003 video ?token= now checks session expiry.
 - Verified: testing_agent iteration_12 (16/16 pass, incl. 3-way concurrency race test).
 - Deferred (P3, optional): CORS allowlist, rate limiting, generic checkout error body, subscription_expired demotion by sub id.
+
+## Store-readiness fixes (June 2026)
+- Removed legacy push-notification code entirely (frontend push.ts, expo-notifications/expo-device pkgs, backend exp.host send, /users/push-token endpoint, expo_push_token field). Comments unaffected.
+- Added Apple-required account deletion: DELETE /api/auth/account (wipes user, sessions, analyses, comments by author_id or user_id, chunks, GridFS + local videos) + 'Delete account' 2-tap confirm button in profile tab.
+- Verified: testing_agent iteration_13 (9/9 backend + frontend E2E delete flow); comment-author deletion bug fixed and pytest re-run green.
+- Web export regenerated at /app/backend/static_web (needs user Re-publish).
+- Apple Developer Program APPROVED (valid to Jul 27, 2027). Google Play Console signup completed, identity verification pending.
+- OPEN QUESTION: some videos still fail AI analysis on prod after resource upgrade - need failing examples from user (suspect very long/large clips).

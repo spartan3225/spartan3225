@@ -1593,7 +1593,9 @@ async def delete_account(user: User = Depends(get_current_user)):
             except Exception:
                 pass
     await db.analyses.delete_many({"user_id": uid})
-    await db.analysis_comments.delete_many({"user_id": uid})
+    await db.analysis_comments.delete_many(
+        {"$or": [{"author_id": uid}, {"user_id": uid}]}
+    )
     await db.upload_chunks.delete_many({"user_id": uid})
     await db.user_sessions.delete_many({"user_id": uid})
     await db.users.delete_one({"user_id": uid})
