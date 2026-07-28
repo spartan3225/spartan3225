@@ -144,3 +144,8 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 ## Privacy policy upgrade for App Store (June 2026)
 - privacy.tsx rewritten to be Apple-submission-complete: covers Google/Apple/email sign-in data, argon2 password hashing, no-tracking/no-IDFA statement, all processors (LemonSqueezy MoR, Gemini, Claude, MongoDB Atlas), in-app account deletion clause, GDPR/CCPA rights, retention incl. backups, intl transfers. Last updated: June 2026.
 - Web export regenerated; verified rendering via screenshot. Live URL after user re-publish: https://wave-motion-ai.emergent.host/privacy
+
+## Support page for App Store (June 2026)
+- New /app/frontend/app/support.tsx: contact email card (mailto), common questions (upload, login, billing/refunds, account deletion), what to include when emailing, legal links. Footer 'Support' link added on landing page.
+- Support URL for App Store Connect (after re-publish): https://wave-motion-ai.emergent.host/support
+- Verified via screenshot on preview. Web export regenerated.

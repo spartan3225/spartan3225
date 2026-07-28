@@ -559,6 +559,12 @@ export default function LoginScreen() {
           >
             <Text style={styles.footerLink}>Refunds</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push("/support" as any)}
+            testID="footer-support-link"
+          >
+            <Text style={styles.footerLink}>Support</Text>
+          </TouchableOpacity>
         </View>
         <Text style={styles.footerCopy}>
           © 2026 SurfCoach23 · All rights reserved
