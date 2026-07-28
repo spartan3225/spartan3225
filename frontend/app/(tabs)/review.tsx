@@ -23,6 +23,8 @@ export default function ReviewScreen() {
   const [items, setItems] = useState<AnalysisListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [band, setBand] = useState<"all" | "high" | "mid" | "low">("all");
+  const [sort, setSort] = useState<"recent" | "best">("recent");
 
   const load = useCallback(async () => {
     try {
@@ -93,10 +95,25 @@ export default function ReviewScreen() {
     );
   };
 
+  const shown = items
+    .filter((i) => {
+      if (band === "all") return true;
+      const s = i.score || 0;
+      if (band === "high") return s >= 80;
+      if (band === "mid") return s >= 50 && s < 80;
+      return s < 50;
+    })
+    .slice()
+    .sort((a, b) =>
+      sort === "best"
+        ? (b.score || 0) - (a.score || 0)
+        : Date.parse(b.created_at) - Date.parse(a.created_at)
+    );
+
   return (
     <SafeAreaView style={styles.container} edges={["top"]} testID="review-screen">
       <FlatList
-        data={items}
+        data={shown}
         keyExtractor={(i) => i.analysis_id}
         renderItem={renderItem}
         contentContainerStyle={{ paddingBottom: 120 }}
@@ -126,9 +143,55 @@ export default function ReviewScreen() {
               <Text style={styles.ctaText}>{t("new_analysis")}</Text>
             </TouchableOpacity>
             {items.length > 0 && (
-              <Text style={styles.sectionLabel}>
-                {t("past_sessions").toUpperCase()}
-              </Text>
+              <>
+                <Text style={styles.sectionLabel}>
+                  {t("past_sessions").toUpperCase()}
+                </Text>
+                <View style={styles.filterRow} testID="review-filters">
+                  {(
+                    [
+                      ["all", t("cat_all")],
+                      ["high", "80+"],
+                      ["mid", "50–79"],
+                      ["low", "<50"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.filterChip, band === key && styles.filterChipActive]}
+                      onPress={() => {
+                        haptic.tap();
+                        setBand(key);
+                      }}
+                      testID={`filter-${key}`}
+                    >
+                      <Text
+                        style={[styles.filterText, band === key && { color: "#000" }]}
+                      >
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                  <View style={{ flex: 1 }} />
+                  <TouchableOpacity
+                    style={styles.sortBtn}
+                    onPress={() => {
+                      haptic.tap();
+                      setSort((s) => (s === "recent" ? "best" : "recent"));
+                    }}
+                    testID="sort-toggle"
+                  >
+                    <Ionicons
+                      name={sort === "recent" ? "time-outline" : "podium-outline"}
+                      size={13}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.sortText}>
+                      {sort === "recent" ? t("sort_recent") : t("sort_best")}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
         }
@@ -186,6 +249,24 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     marginBottom: spacing.sm,
   },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  filterChip: {
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    backgroundColor: colors.glass,
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  filterChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  filterText: { color: colors.textSecondary, fontSize: 11, fontWeight: "700" },
+  sortBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  sortText: { color: colors.primary, fontSize: 11, fontWeight: "700" },
   card: {
     flexDirection: "row",
     alignItems: "center",

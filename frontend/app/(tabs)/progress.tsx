@@ -27,6 +27,46 @@ import { useI18n } from "../../src/i18n";
 import ScoreRing from "../../src/components/ScoreRing";
 import GlassCard from "../../src/components/GlassCard";
 import Skeleton from "../../src/components/Skeleton";
+import RadarChart from "../../src/components/RadarChart";
+
+const RADAR_KEYS = [
+  "surf_flow",
+  "take_off",
+  "bottom_turn",
+  "speed_generation",
+  "balance",
+  "wave_reading",
+];
+
+function computeStreaks(dates: string[]): { current: number; longest: number } {
+  // dates = ISO created_at strings
+  const days = Array.from(
+    new Set(dates.map((d) => new Date(d).toISOString().slice(0, 10)))
+  ).sort();
+  if (!days.length) return { current: 0, longest: 0 };
+  const DAY = 86400000;
+  let longest = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const diff = (Date.parse(days[i]) - Date.parse(days[i - 1])) / DAY;
+    run = diff === 1 ? run + 1 : 1;
+    if (run > longest) longest = run;
+  }
+  // current streak must end today or yesterday
+  const today = new Date().toISOString().slice(0, 10);
+  const last = days[days.length - 1];
+  const gap = (Date.parse(today) - Date.parse(last)) / DAY;
+  let current = 0;
+  if (gap <= 1) {
+    current = 1;
+    for (let i = days.length - 1; i > 0; i--) {
+      const diff = (Date.parse(days[i]) - Date.parse(days[i - 1])) / DAY;
+      if (diff === 1) current++;
+      else break;
+    }
+  }
+  return { current, longest };
+}
 
 const CHART_W = 320;
 const CHART_H = 120;
@@ -85,6 +125,19 @@ export default function ProgressScreen() {
   const latestScores = (latest?.scores || []).filter((s) =>
     (SCORE_CATEGORIES as readonly string[]).includes(s.key)
   );
+  const scoreMap: Record<string, number> = {};
+  latestScores.forEach((s) => {
+    scoreMap[s.key] = s.value;
+  });
+  const radarAxes = RADAR_KEYS.filter((k) => scoreMap[k] !== undefined).map(
+    (k) => ({ label: t(`score_${k}`), value: scoreMap[k] })
+  );
+  const streaks = computeStreaks(
+    items.filter((i) => i.status === "ready").map((i) => i.created_at)
+  );
+  const bestItem = ready.length
+    ? ready.reduce((a, b) => ((b.score || 0) > (a.score || 0) ? b : a))
+    : null;
 
   if (loading) {
     return (
@@ -176,6 +229,39 @@ export default function ProgressScreen() {
                 {Math.min(scores.length, 10)} {t("last_sessions")}
               </Text>
             </GlassCard>
+
+            {/* Skill radar */}
+            {radarAxes.length >= 3 && (
+              <GlassCard style={styles.chartCard} testID="skill-radar">
+                <Text style={styles.sectionLabel}>
+                  {t("skill_radar").toUpperCase()}
+                </Text>
+                <RadarChart axes={radarAxes} />
+              </GlassCard>
+            )}
+
+            {/* Streaks + best wave */}
+            <View style={styles.streakRow} testID="streaks-row">
+              <GlassCard style={styles.streakCard}>
+                <Ionicons name="flame" size={18} color={colors.warning} />
+                <Text style={styles.streakValue}>{streaks.current}</Text>
+                <Text style={styles.streakLabel}>{t("current_streak")}</Text>
+              </GlassCard>
+              <GlassCard style={styles.streakCard}>
+                <Ionicons name="trophy" size={18} color={colors.primary} />
+                <Text style={styles.streakValue}>{streaks.longest}</Text>
+                <Text style={styles.streakLabel}>{t("longest_streak")}</Text>
+              </GlassCard>
+              <GlassCard style={styles.streakCard}>
+                <Ionicons name="star" size={18} color={colors.success} />
+                <Text style={[styles.streakValue, { color: scoreColor(bestItem?.score || 0) }]}>
+                  {bestItem?.score ?? 0}
+                </Text>
+                <Text style={styles.streakLabel} numberOfLines={2}>
+                  {t("best_wave")}
+                </Text>
+              </GlassCard>
+            </View>
 
             {/* Skill evolution */}
             {latestScores.length > 0 && (
@@ -341,6 +427,21 @@ const styles = StyleSheet.create({
   miniValue: { color: colors.textPrimary, fontSize: 18, fontWeight: "900" },
   miniLabel: { color: colors.textMuted, fontSize: 9, letterSpacing: 0.5, textTransform: "uppercase", marginTop: 1 },
   chartCard: { marginHorizontal: spacing.lg, marginBottom: spacing.md },
+  streakRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  streakCard: { flex: 1, alignItems: "center", paddingVertical: 14, gap: 4 },
+  streakValue: { color: colors.textPrimary, fontSize: 20, fontWeight: "900" },
+  streakLabel: {
+    color: colors.textMuted,
+    fontSize: 9,
+    letterSpacing: 0.5,
+    textAlign: "center",
+    textTransform: "uppercase",
+  },
   sectionLabel: { color: colors.textMuted, fontSize: 11, letterSpacing: 2.5, fontWeight: "800", marginBottom: spacing.md },
   chartFoot: { color: colors.textMuted, fontSize: 10, textAlign: "center", marginTop: 6 },
   skillRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },

@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 19 — Phase 2 (skeleton tracking + speed/compression graphs), Phase 3 (skill radar + streaks + review filters/sort) and Phase 4 (Pro Comparison screen) verified END-TO-END on both backend and frontend with ZERO regressions. Backend: 13/13 pytest cases pass in /app/backend/tests/test_phase234_pose_iter19.py — GET /api/analyses/ana_demoupgrade01/pose returns status='ready' with data.width=1280, height=720, sample_fps=7.48, 55 frames (each with kp[33][3]), metrics.speed (54 samples) + metrics.compression (46 samples with knee angles ~5-200°), monotonic timestamps; auth (401 without token, 404 for coach on non-shared analysis, 404 for unknown id) all correct; old-schema analysis /pose returns valid {status, data:null|dict} envelope without 500; regression on /auth/me, /analyses list, /analyses/{id} (still returns scores(14)+main_mistake+key_moments), /analyses/quota, /plans all OK. Frontend: 31/31 Playwright checks pass — /analysis/ana_demoupgrade01: skeleton-toggle-btn visible, tapping it renders pose-overlay with SVG bones (lines) + joints (circles) and angle label '179°' drawn on top of video; overlay persists after key-moment-1 click; speed-analysis-section + compression-analysis-card both render with SVG paths. compare-pro-btn navigates to /compare/ana_demoupgrade01 where compare-screen shows pro-yago_dora chip (active) + pro-gabriel_medina chip (disabled 'Coming soon') + split-screen (You + Yago 'Coming Soon' placeholder) + compare-radar (You vs Yago hex) + compare-bars (per-category deltas -22 Surf Flow, -15 Take-Off, -17 Bottom Turn, -32 Top Turn) + ghost-overlay-card. Progress tab renders skill-radar + streaks-row in addition to score-trend-chart + skill-evolution. Review tab: filter-high correctly reduces list to 0 (all demo scores=78 <80), filter-all restores 2 cards, sort-toggle label switches from 'Recent' to 'Best score'. Old-schema /analysis/ana_ipadshot001 renders without crash. Dashboard renders; language picker (lang-es → lang-en) still functional. Video element shows 'no supported sources' pageerror as expected in headless chromium — problem-statement notes this is fine, skeleton SVG still draws over it.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecations (pre-existing)", "issue": "Console still emits 'Image: style.resizeMode is deprecated. Please use props.resizeMode' and 'props.pointerEvents is deprecated. Use style.pointerEvents' — same warnings flagged in iteration_18. Non-blocking. Reference: /app/frontend/app/(tabs)/index.tsx, /app/frontend/app/(tabs)/progress.tsx, /app/frontend/src/components/GlassCard.tsx (or wherever pointerEvents prop is set)."},
+      {"component": "Animated useNativeDriver", "issue": "Warning 'Animated: useNativeDriver is not supported because the native animated module is missing' — pre-existing on react-native-web, not a Phase 2/3/4 regression. Consider gating useNativeDriver:true with Platform.OS !== 'web'."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase234_pose_iter19.py",
+    "/app/test_reports/pytest/iteration_19_phase234.xml"
+  ],
+  "action_items": [
+    "(optional cleanup carried from iter18) Migrate Image style.resizeMode → props.resizeMode and remove pointerEvents prop (use style.pointerEvents) to silence RN 0.74+ web deprecation warnings.",
+    "(optional) Gate Animated useNativeDriver:true behind Platform.OS !== 'web'."
+  ],
+  "critical_code_review_comments": [
+    "pose_tracker.py is clean: bounded work (MAX_FRAMES=240, MAX_SECONDS=150), heavy libs imported lazily inside the function so server.py startup stays fast, correct crop-then-pose pipeline with bbox re-detection every 3 frames + tight update from pose landmarks, JSON-safe output (rounded floats, plain lists) and honest 'visible<8 -> discard' junk filter. Well written.",
+    "server.py get_analysis_pose is auth-gated (get_current_user), correctly returns 404 for non-owner AND non-shared coach, projects only needed fields, and returns clean {status, data} envelope. No _id leaks. Good.",
+    "server.py is now 2117 lines — reiterating the split-into-routers recommendation from iter18. Still not blocking.",
+    "/app/frontend/app/analysis/[id].tsx has grown further with skeleton overlay + metric charts — check length and consider extracting PoseOverlay orchestration + MetricChart section into a dedicated hook for readability."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase234_pose_iter19.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% (31/31 flows verified)"},
+  "seed_data_creation": "None. Used existing seeds: session demo_token_active (user_demo_12345), session demo_coach_token (user_coach_67890), analysis ana_demoupgrade01 (new-schema, pose_status=ready, 55 frames), analysis ana_ipadshot001 (old-schema).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 2/3/4 premium upgrade is GREEN. Regression suite for Phase 2-4 lives in /app/backend/tests/test_phase234_pose_iter19.py (13 tests, ~2s). Pose endpoint contract: GET /api/analyses/{id}/pose returns {status: ready|none|processing|failed, data: {width,height,sample_fps,frames:[{t,kp[33][3]}],metrics:{speed:[{t,v}],compression:[{t,v}]}} | null}; auth via Bearer token; non-owner AND non-shared-coach get 404 (not 403). Frontend testIDs stable: skeleton-toggle-btn, pose-overlay, speed-analysis-section, compression-analysis-card, compare-pro-btn, compare-screen, pro-yago_dora/pro-gabriel_medina/pro-john_john/pro-italo, split-screen, compare-radar, compare-bars, ghost-overlay-card, skill-radar, streaks-row, filter-all/high/mid/low, sort-toggle. Video element inside analysis screen throws 'no supported sources' in headless chromium — expected, skeleton SVG still draws.",
+  "rca_of_issue": "N/A — no bugs found in this iteration."
+}

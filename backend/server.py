@@ -1301,6 +1301,39 @@ async def _run_analysis_in_background(
     }
     await db.analyses.update_one({"analysis_id": analysis_id}, {"$set": update})
 
+    # --- Skeleton tracking (Phase 2) ---
+    # Runs AFTER the AI result is saved so the user sees feedback ASAP; pose
+    # overlay appears when ready. CPU-bound → thread, with a hard timeout.
+    await _run_pose_extraction(analysis_id, save_path)
+
+
+async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
+    try:
+        await db.analyses.update_one(
+            {"analysis_id": analysis_id}, {"$set": {"pose_status": "processing"}}
+        )
+        from pose_tracker import extract_pose_data
+
+        data = await asyncio.wait_for(
+            asyncio.to_thread(extract_pose_data, str(save_path)), timeout=300
+        )
+        if not data.get("frames"):
+            raise RuntimeError("no pose frames detected")
+        await db.pose_data.replace_one(
+            {"analysis_id": analysis_id},
+            {"analysis_id": analysis_id, "data": data,
+             "created_at": datetime.now(timezone.utc)},
+            upsert=True,
+        )
+        await db.analyses.update_one(
+            {"analysis_id": analysis_id}, {"$set": {"pose_status": "ready"}}
+        )
+    except Exception as e:
+        logger.warning("pose extraction failed for %s: %s", analysis_id, str(e)[:200])
+        await db.analyses.update_one(
+            {"analysis_id": analysis_id}, {"$set": {"pose_status": "failed"}}
+        )
+
 
 def _sanitize_scores(raw) -> list:
     """Keep only well-formed {key, value, note} entries."""
@@ -1401,6 +1434,30 @@ async def get_analysis(analysis_id: str, user: User = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Not found")
     doc = await _fail_if_stale(doc)
     return AnalysisOut(**{k: doc[k] for k in AnalysisOut.model_fields if k in doc})
+
+
+@api_router.get("/analyses/{analysis_id}/pose")
+async def get_analysis_pose(
+    analysis_id: str, user: User = Depends(get_current_user)
+):
+    doc = await db.analyses.find_one(
+        {"analysis_id": analysis_id},
+        {"_id": 0, "user_id": 1, "shared_with_coach_id": 1, "pose_status": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    if (
+        doc.get("user_id") != user.user_id
+        and doc.get("shared_with_coach_id") != user.user_id
+    ):
+        raise HTTPException(status_code=404, detail="Not found")
+    status = doc.get("pose_status") or "none"
+    if status != "ready":
+        return {"status": status, "data": None}
+    pose_doc = await db.pose_data.find_one({"analysis_id": analysis_id}, {"_id": 0})
+    if not pose_doc:
+        return {"status": "failed", "data": None}
+    return {"status": "ready", "data": pose_doc["data"]}
 
 
 @api_router.get("/analyses/{analysis_id}/video")

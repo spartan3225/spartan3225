@@ -427,6 +427,24 @@ export function getVideoStreamUrl(analysisId: string, token: string) {
   )}`;
 }
 
+// ---- Skeleton tracking (pose) ----
+export type PoseFrame = { t: number; kp: number[][] }; // 33 x [x, y, visibility]
+export type MetricPoint = { t: number; v: number };
+export type PoseData = {
+  version: number;
+  width: number;
+  height: number;
+  sample_fps: number;
+  frames: PoseFrame[];
+  metrics: { speed: MetricPoint[]; compression: MetricPoint[] };
+};
+
+export async function getPoseData(
+  analysisId: string
+): Promise<{ status: string; data: PoseData | null }> {
+  return apiFetch(`/analyses/${analysisId}/pose`);
+}
+
 // ---- Quotas, plans, payments ----
 export type Quota = {
   tier: string;

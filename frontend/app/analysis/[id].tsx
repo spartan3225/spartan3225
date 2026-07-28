@@ -17,9 +17,11 @@ import { useEvent } from "expo";
 import {
   Analysis,
   AnalysisComment,
+  PoseData,
   addComment,
   fetchMe,
   getAnalysis,
+  getPoseData,
   getToken,
   getVideoStreamUrl,
   listComments,
@@ -28,7 +30,6 @@ import {
 import {
   colors,
   radii,
-  scoreColor,
   severityColor,
   spacing,
   SCORE_CATEGORIES,
@@ -37,6 +38,8 @@ import { useI18n } from "../../src/i18n";
 import { haptic } from "../../src/haptics";
 import ScoreRing from "../../src/components/ScoreRing";
 import GlassCard from "../../src/components/GlassCard";
+import PoseOverlay from "../../src/components/PoseOverlay";
+import MetricChart from "../../src/components/MetricChart";
 
 const SPEEDS = [1, 0.5, 0.25];
 
@@ -59,6 +62,11 @@ export default function AnalysisDetail() {
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
+  const [pose, setPose] = useState<PoseData | null>(null);
+  const [poseStatus, setPoseStatus] = useState<string>("none");
+  const [overlayOn, setOverlayOn] = useState(false);
+  const [videoTime, setVideoTime] = useState(0);
+  const [videoW, setVideoW] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -99,6 +107,42 @@ export default function AnalysisDetail() {
   const player = useVideoPlayer(videoUrl || null, (p) => {
     p.loop = true;
   });
+
+  // Fetch skeleton-tracking data (retry while backend is still processing it)
+  useEffect(() => {
+    if (!id || !data || data.status !== "ready") return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const fetchPose = async () => {
+      try {
+        const res = await getPoseData(id);
+        if (cancelled) return;
+        setPoseStatus(res.status);
+        if (res.status === "ready" && res.data) {
+          setPose(res.data);
+        } else if (res.status === "processing") {
+          timer = setTimeout(fetchPose, 8000);
+        }
+      } catch {}
+    };
+    fetchPose();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [id, data?.status]);
+
+  // Track playhead while the skeleton overlay is visible
+  useEffect(() => {
+    if (!overlayOn) return;
+    const timer = setInterval(() => {
+      try {
+        setVideoTime(player.currentTime || 0);
+      } catch {}
+    }, 120);
+    return () => clearInterval(timer);
+  }, [overlayOn]);
+
   const { isPlaying } = useEvent(player, "playingChange", {
     isPlaying: player.playing,
   });
@@ -167,6 +211,22 @@ export default function AnalysisDetail() {
   const mm = data.main_mistake;
   const isOwner = me && data.user_id === me.user_id;
 
+  const VIDEO_H = 230;
+  let poseRect: { x: number; y: number; w: number; h: number } | null = null;
+  if (pose && videoW > 0) {
+    const va = pose.width / pose.height;
+    const ca = videoW / VIDEO_H;
+    let w: number, h: number;
+    if (va > ca) {
+      w = videoW;
+      h = videoW / va;
+    } else {
+      h = VIDEO_H;
+      w = VIDEO_H * va;
+    }
+    poseRect = { w, h, x: (videoW - w) / 2, y: (VIDEO_H - h) / 2 };
+  }
+
   return (
     <SafeAreaView
       style={styles.container}
@@ -187,18 +247,41 @@ export default function AnalysisDetail() {
         </View>
 
         {/* Video + custom replay controls */}
-        <View style={styles.videoWrap}>
+        <View
+          style={styles.videoWrap}
+          onLayout={(e) => setVideoW(e.nativeEvent.layout.width)}
+        >
           {videoUrl ? (
             <VideoView
               player={player}
               style={styles.video}
-              contentFit="cover"
+              contentFit={overlayOn ? "contain" : "cover"}
               nativeControls={false}
               testID="analysis-video"
             />
           ) : (
             <View style={[styles.video, styles.center]}>
               <Ionicons name="film-outline" size={42} color={colors.textMuted} />
+            </View>
+          )}
+          {overlayOn && pose && poseRect && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: poseRect.x,
+                top: poseRect.y,
+                width: poseRect.w,
+                height: poseRect.h,
+              }}
+              testID="pose-overlay"
+            >
+              <PoseOverlay
+                data={pose}
+                time={videoTime}
+                width={poseRect.w}
+                height={poseRect.h}
+              />
             </View>
           )}
           {videoUrl && (
@@ -242,6 +325,49 @@ export default function AnalysisDetail() {
                   {SPEEDS[speedIdx]}x
                 </Text>
               </TouchableOpacity>
+              {poseStatus === "ready" && pose ? (
+                <TouchableOpacity
+                  style={[styles.skelBtn, overlayOn && styles.speedBtnActive]}
+                  onPress={() => {
+                    haptic.medium();
+                    setOverlayOn((v) => {
+                      const next = !v;
+                      if (next && pose.frames.length) {
+                        // Snap playhead into the tracked range so the
+                        // skeleton is immediately visible.
+                        try {
+                          const ct = player.currentTime || 0;
+                          const near = pose.frames.reduce(
+                            (best, f) =>
+                              Math.abs(f.t - ct) < Math.abs(best - ct) ? f.t : best,
+                            pose.frames[0].t
+                          );
+                          if (Math.abs(near - ct) > 0.6) {
+                            player.currentTime = pose.frames[0].t;
+                            setVideoTime(pose.frames[0].t);
+                          } else {
+                            setVideoTime(ct);
+                          }
+                        } catch {}
+                      }
+                      return next;
+                    });
+                  }}
+                  testID="skeleton-toggle-btn"
+                >
+                  <Ionicons
+                    name="body"
+                    size={16}
+                    color={overlayOn ? "#000" : colors.textPrimary}
+                  />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+          {poseStatus === "processing" && (
+            <View style={styles.poseNote}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.poseNoteText}>{t("pose_processing")}</Text>
             </View>
           )}
         </View>
@@ -365,6 +491,35 @@ export default function AnalysisDetail() {
                 </GlassCard>
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Biomechanics graphs (from skeleton tracking) */}
+        {data.status === "ready" && pose && pose.metrics.speed.length > 1 && (
+          <View style={styles.section} testID="speed-analysis-section">
+            <GlassCard>
+              <View style={styles.cardHead}>
+                <Ionicons name="speedometer-outline" size={15} color={colors.primary} />
+                <Text style={[styles.cardHeadText, { color: colors.textMuted }]}>
+                  {t("speed_analysis").toUpperCase()}
+                </Text>
+              </View>
+              <MetricChart points={pose.metrics.speed} higherIsBetter />
+            </GlassCard>
+            {pose.metrics.compression.length > 1 && (
+              <GlassCard style={{ marginTop: spacing.sm }} testID="compression-analysis-card">
+                <View style={styles.cardHead}>
+                  <Ionicons name="contract-outline" size={15} color={colors.primary} />
+                  <Text style={[styles.cardHeadText, { color: colors.textMuted }]}>
+                    {t("compression_analysis").toUpperCase()}
+                  </Text>
+                </View>
+                <MetricChart
+                  points={pose.metrics.compression}
+                  higherIsBetter={false}
+                />
+              </GlassCard>
+            )}
           </View>
         )}
 
@@ -557,6 +712,22 @@ export default function AnalysisDetail() {
             </TouchableOpacity>
           ) : null}
 
+          {data.status === "ready" && (data.scores?.length || 0) > 0 ? (
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: `${colors.success}66` }]}
+              onPress={() => {
+                haptic.tap();
+                router.push(`/compare/${data.analysis_id}` as any);
+              }}
+              testID="compare-pro-btn"
+            >
+              <Ionicons name="git-compare-outline" size={16} color={colors.success} />
+              <Text style={[styles.secondaryBtnText, { color: colors.success }]}>
+                {t("compare_btn")}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
             style={styles.primaryBtn}
             onPress={() => router.replace("/(tabs)/upload")}
@@ -742,6 +913,24 @@ const styles = StyleSheet.create({
   },
   speedBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   speedText: { color: colors.textPrimary, fontSize: 12, fontWeight: "800" },
+  skelBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  poseNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    justifyContent: "center",
+    paddingVertical: 6,
+    backgroundColor: "rgba(0,229,255,0.04)",
+  },
+  poseNoteText: { color: colors.textMuted, fontSize: 11 },
   momentChip: {
     borderWidth: 1,
     borderRadius: radii.md,

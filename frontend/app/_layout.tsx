@@ -24,6 +24,10 @@ export default function RootLayout() {
             name="analysis/[id]"
             options={{ animation: "slide_from_bottom" }}
           />
+          <Stack.Screen
+            name="compare/[id]"
+            options={{ animation: "slide_from_right" }}
+          />
           <Stack.Screen name="paywall" options={{ animation: "slide_from_bottom" }} />
           <Stack.Screen name="payment-success" />
           <Stack.Screen name="payment-cancel" />
