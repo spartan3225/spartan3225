@@ -140,3 +140,7 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - app.json: ios.usesAppleSignIn=true; expo-apple-authentication installed. backend/.env: APPLE_AUDIENCES.
 - Verified: testing_agent iteration_14 (9/9 backend + full frontend E2E). QA account: qa.tester@surfcoach23.com / TestPass123!
 - User must: Re-publish, then generate a NEW iOS build (both App Store blockers now resolved).
+
+## Privacy policy upgrade for App Store (June 2026)
+- privacy.tsx rewritten to be Apple-submission-complete: covers Google/Apple/email sign-in data, argon2 password hashing, no-tracking/no-IDFA statement, all processors (LemonSqueezy MoR, Gemini, Claude, MongoDB Atlas), in-app account deletion clause, GDPR/CCPA rights, retention incl. backups, intl transfers. Last updated: June 2026.
+- Web export regenerated; verified rendering via screenshot. Live URL after user re-publish: https://wave-motion-ai.emergent.host/privacy

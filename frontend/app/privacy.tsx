@@ -16,22 +16,42 @@ export default function PrivacyScreen() {
         <View style={{ width: 26 }} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.lastUpdated}>Last updated: June 2025</Text>
+        <Text style={styles.lastUpdated}>Last updated: June 2026</Text>
+
+        <Section title="Who we are">
+          SurfCoach23 (&quot;we&quot;, &quot;us&quot;) provides AI-powered surf video analysis via
+          our website and mobile apps. This policy explains what data we
+          collect, why, and your rights. It applies to the SurfCoach23 web app
+          and the iOS / Android apps.
+        </Section>
 
         <Section title="What we collect">
-          • Account info: name, email, Google profile picture (via Google
-          Sign-In).{"\n"}
-          • Subscription info: tier, status, renewal date (from LemonSqueezy).{"\n"}
-          • Content you upload: surfing video clips and their AI analyses.{"\n"}
-          • Usage data: app version, login times, error logs — basic, anonymised.
+          • Account info: name and email address — provided when you sign in
+          with Google, Sign in with Apple, or create an email & password
+          account. With Google we also receive your profile picture. With
+          Apple you may hide your email (we then receive Apple&apos;s private
+          relay address).{"\n"}
+          • Login credentials: if you use email sign-up, we store your
+          password only as a secure one-way hash (argon2) — we can never read
+          it.{"\n"}
+          • Subscription info: plan tier, status, renewal date (from our
+          payment provider LemonSqueezy).{"\n"}
+          • Content you upload: surfing video clips and the AI analyses
+          generated from them.{"\n"}
+          • Usage data: app version, login times, error logs — basic and
+          anonymised.
         </Section>
 
         <Section title="What we do NOT collect">
+          • We do not track you across other companies&apos; apps or websites, and
+          we do not use advertising identifiers (no IDFA).{"\n"}
           • We do not collect your location.{"\n"}
-          • We do not access your camera roll, contacts, or photos without
-          your explicit action (file picker).{"\n"}
+          • We do not access your camera, microphone, or photo library without
+          your explicit action and permission (recording or picking a clip).{"\n"}
           • We do not collect payment card details — those are handled by
-          LemonSqueezy and never reach our servers.
+          LemonSqueezy and never reach our servers.{"\n"}
+          • We do not sell your personal data, and we do not show third-party
+          ads.
         </Section>
 
         <Section title="How we use it">
@@ -47,25 +67,37 @@ export default function PrivacyScreen() {
         <Section title="Sharing">
           We share data only with the third-party processors necessary to run
           the service:
-          {"\n"}• <Text style={styles.bold}>LemonSqueezy</Text> — payment processing
-          {"\n"}• <Text style={styles.bold}>Google Cloud (Gemini)</Text> — video AI
-          {"\n"}• <Text style={styles.bold}>Anthropic (Claude)</Text> — text AI
+          {"\n"}• <Text style={styles.bold}>LemonSqueezy</Text> — payment &
+          subscription processing (merchant of record)
+          {"\n"}• <Text style={styles.bold}>Google (Gemini AI)</Text> — video analysis
+          {"\n"}• <Text style={styles.bold}>Anthropic (Claude AI)</Text> — coaching text
+          {"\n"}• <Text style={styles.bold}>Google Sign-In / Apple Sign-In</Text> —
+          authentication, only if you choose them
           {"\n"}• <Text style={styles.bold}>MongoDB Atlas</Text> — secure database hosting
           {"\n\n"}
-          We never sell your data.
+          Each processor receives only the minimum data required. We never
+          sell your data. Your data may be processed on servers outside your
+          country; we use providers with industry-standard safeguards
+          (encryption in transit and at rest).
         </Section>
 
         <Section title="Coach sharing">
-          When you tap "Share with coach", that specific video and analysis
+          When you tap &quot;Share with coach&quot;, that specific video and analysis
           become visible to the coach you choose, including any comments they
           add. You can revoke sharing anytime from the analysis screen.
         </Section>
 
-        <Section title="Your rights">
-          You can request a copy of your data, correction of inaccuracies, or
-          deletion of your account & data at any time by emailing
-          {" "}<Text style={styles.link}>surfcoach23@gmail.com</Text>.
-          We respond within 30 days.
+        <Section title="Your rights & account deletion">
+          • <Text style={styles.bold}>Delete your account in the app:</Text>{" "}
+          Profile → Delete account. This permanently erases your account,
+          videos, analyses, comments and sessions from our systems.{"\n"}
+          • You can also request a copy of your data, correction of
+          inaccuracies, or deletion by emailing{" "}
+          <Text style={styles.link}>surfcoach23@gmail.com</Text> — we respond
+          within 30 days.{"\n"}
+          • Depending on where you live (e.g. EU/EEA GDPR, California CCPA),
+          you may have additional rights such as data portability and the
+          right to object; contact us to exercise them.
         </Section>
 
         <Section title="Children">
@@ -79,13 +111,16 @@ export default function PrivacyScreen() {
         </Section>
 
         <Section title="Retention">
-          Videos and analyses are stored as long as your account exists. If
-          you delete your account, we erase all your data within 30 days.
+          Videos and analyses are stored for as long as your account exists.
+          When you delete your account (in-app or by email), your personal
+          data, videos and analyses are erased from our production systems
+          immediately, and from encrypted backups within 30 days. Payment
+          records may be retained by LemonSqueezy as required by tax law.
         </Section>
 
         <Section title="Updates">
           We may update this policy and will notify you in-app of material
-          changes. The "Last updated" date above is your reference.
+          changes. The &quot;Last updated&quot; date above is your reference.
         </Section>
 
         <Section title="Contact">
