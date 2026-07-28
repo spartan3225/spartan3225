@@ -149,3 +149,8 @@ Stripe still in TEST mode. Users still able to upgrade via Stripe Checkout (uses
 - New /app/frontend/app/support.tsx: contact email card (mailto), common questions (upload, login, billing/refunds, account deletion), what to include when emailing, legal links. Footer 'Support' link added on landing page.
 - Support URL for App Store Connect (after re-publish): https://wave-motion-ai.emergent.host/support
 - Verified via screenshot on preview. Web export regenerated.
+
+## iPad 13" App Store screenshots (June 2026)
+- Generated 5 screenshots at exactly 2048x2732 (Apple 13" iPad requirement): home/sessions, analysis (with real surf video frame injected as poster), corrections/drills, upload screen, landing hero.
+- Stored in /app/frontend/public/store-assets/ (auto-included in every expo web export -> served at /store-assets/ on preview and, after re-publish, on the live domain).
+- Demo analysis seeded locally: ana_ipadshot001 for user_demo_12345 (status ready, real 5MB surf mp4 copied to their upload dir) - reusable for future marketing shots.
