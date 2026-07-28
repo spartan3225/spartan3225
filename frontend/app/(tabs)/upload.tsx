@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -8,13 +8,21 @@ import {
   Alert,
   Platform,
   ScrollView,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
-import { uploadVideo } from "../../src/api";
+import {
+  uploadVideo,
+  uploadChunksForFile,
+  finalizeMultiUpload,
+  createCheckout,
+  fetchMe,
+  ChunkedUploadRef,
+} from "../../src/api";
 import { colors, spacing } from "../../src/theme";
 import { useI18n } from "../../src/i18n";
 import { haptic } from "../../src/haptics";
@@ -33,6 +41,18 @@ export default function UploadScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"single" | "multi">("single");
+  const [multiAssets, setMultiAssets] = useState<PickedAsset[]>([]);
+  const [credits, setCredits] = useState(0);
+  const [buying, setBuying] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMe()
+        .then((me) => setCredits(me?.multi_credits || 0))
+        .catch(() => {});
+    }, [])
+  );
 
   const player = useVideoPlayer(asset?.uri || null, (p) => {
     p.loop = true;
@@ -58,12 +78,17 @@ export default function UploadScreen() {
     });
     if (!r.canceled && r.assets[0]) {
       const a = r.assets[0];
-      setAsset({
+      const picked: PickedAsset = {
         uri: a.uri,
         fileName: a.fileName,
         mimeType: a.mimeType || "video/mp4",
         fileSize: a.fileSize,
-      });
+      };
+      if (mode === "multi") {
+        setMultiAssets((prev) => (prev.length >= 3 ? prev : [...prev, picked]));
+      } else {
+        setAsset(picked);
+      }
     }
   };
 
@@ -81,12 +106,78 @@ export default function UploadScreen() {
     });
     if (!r.canceled && r.assets[0]) {
       const a = r.assets[0];
-      setAsset({
+      const picked: PickedAsset = {
         uri: a.uri,
         fileName: a.fileName,
         mimeType: a.mimeType || "video/mp4",
         fileSize: a.fileSize,
-      });
+      };
+      if (mode === "multi") {
+        setMultiAssets((prev) => (prev.length >= 3 ? prev : [...prev, picked]));
+      } else {
+        setAsset(picked);
+      }
+    }
+  };
+
+  const buyCredit = async () => {
+    setBuying(true);
+    setError(null);
+    try {
+      const origin =
+        Platform.OS === "web" && typeof window !== "undefined"
+          ? window.location.origin
+          : "https://surfcoach23.com";
+      const { url } = await createCheckout("multi", origin);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.href = url;
+      } else {
+        await Linking.openURL(url);
+      }
+    } catch (e: any) {
+      showError(e?.message || "Could not start checkout");
+    } finally {
+      setBuying(false);
+    }
+  };
+
+  const submitMulti = async () => {
+    if (multiAssets.length < 2) return;
+    setSubmitting(true);
+    setProgress(0);
+    setError(null);
+    try {
+      const refs: ChunkedUploadRef[] = [];
+      for (let i = 0; i < multiAssets.length; i++) {
+        const a = multiAssets[i];
+        const name =
+          a.fileName ||
+          `clip_${Date.now()}_${i}.${a.mimeType?.split("/")?.[1] || "mp4"}`;
+        const ref = await uploadChunksForFile(
+          a.uri,
+          name,
+          a.mimeType || "video/mp4",
+          (pct) =>
+            setProgress(
+              Math.round(((i + pct / 100) / multiAssets.length) * 95)
+            )
+        );
+        refs.push(ref);
+      }
+      const result = await finalizeMultiUpload(refs);
+      haptic.success();
+      setMultiAssets([]);
+      setCredits((c) => Math.max(0, c - 1));
+      router.replace(`/analysis/${result.analysis_id}` as any);
+    } catch (e: any) {
+      const m = String(e?.message || "");
+      if (m.includes("402") || m.toLowerCase().includes("credit")) {
+        showError(t("credit_needed_note"));
+      } else {
+        showError(e?.message || "Upload failed");
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -129,10 +220,105 @@ export default function UploadScreen() {
             <Text style={styles.brandLabel}>NEW · ANALYSIS</Text>
           </View>
           <Text style={styles.heading}>{t("upload_title").toUpperCase()}</Text>
-          <Text style={styles.subheading}>{t("upload_sub")}</Text>
+          <Text style={styles.subheading}>
+            {mode === "multi" ? t("multi_sub") : t("upload_sub")}
+          </Text>
         </View>
 
+        {/* Mode toggle */}
+        <View style={styles.modeRow} testID="mode-toggle">
+          {(
+            [
+              ["single", t("single_mode")],
+              ["multi", t("multi_mode")],
+            ] as const
+          ).map(([key, label]) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.modeBtn, mode === key && styles.modeBtnActive]}
+              onPress={() => {
+                haptic.tap();
+                setMode(key);
+                setError(null);
+              }}
+              disabled={submitting}
+              testID={`mode-${key}`}
+            >
+              <Text style={[styles.modeText, mode === key && { color: "#000" }]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {mode === "multi" && (
+            <View style={styles.creditsPill} testID="credits-pill">
+              <Ionicons name="ticket-outline" size={13} color={colors.primary} />
+              <Text style={styles.creditsText}>
+                {t("credits")}: {credits}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {mode === "multi" && (
+          <View style={styles.multiBox}>
+            {multiAssets.map((a, i) => (
+              <View key={i} style={styles.multiRow} testID={`multi-clip-${i}`}>
+                <Ionicons name="film-outline" size={16} color={colors.primary} />
+                <Text style={styles.multiName} numberOfLines={1}>
+                  {t("clip")} {i + 1} — {a.fileName || a.uri.split("/").pop()}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    setMultiAssets((prev) => prev.filter((_, j) => j !== i))
+                  }
+                  disabled={submitting}
+                  testID={`multi-remove-${i}`}
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {multiAssets.length < 3 && (
+              <TouchableOpacity
+                style={styles.addClipBtn}
+                onPress={pickFromGallery}
+                disabled={submitting}
+                testID="add-clip-btn"
+              >
+                <Ionicons name="add" size={16} color={colors.primary} />
+                <Text style={styles.addClipText}>
+                  {t("add_clip")} ({multiAssets.length}/3)
+                </Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.creditNote}>{t("credit_needed_note")}</Text>
+            {credits === 0 &&
+              (Platform.OS === "ios" ? (
+                <Text style={styles.iosNote} testID="ios-purchase-note">
+                  {t("ios_purchase_note")}
+                </Text>
+              ) : (
+                <TouchableOpacity
+                  style={styles.buyBtn}
+                  onPress={buyCredit}
+                  disabled={buying || submitting}
+                  testID="buy-credit-btn"
+                >
+                  {buying ? (
+                    <ActivityIndicator color={colors.primary} size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="cart-outline" size={15} color={colors.primary} />
+                      <Text style={styles.buyText}>{t("buy_credit")}</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ))}
+          </View>
+        )}
+
         {/* Preview */}
+        {mode === "single" && (
         <View style={styles.previewWrap}>
           {asset ? (
             <VideoView
@@ -169,8 +355,10 @@ export default function UploadScreen() {
             </View>
           )}
         </View>
+        )}
 
         {/* Action buttons */}
+        {mode === "single" && (
         <View style={styles.row}>
           <TouchableOpacity
             style={[styles.optionBtn, { marginRight: spacing.sm }]}
@@ -195,6 +383,7 @@ export default function UploadScreen() {
             <Text style={styles.optionText}>{t("record")}</Text>
           </TouchableOpacity>
         </View>
+        )}
 
         {error ? (
           <Text style={styles.error} testID="upload-error">
@@ -205,21 +394,38 @@ export default function UploadScreen() {
         <TouchableOpacity
           style={[
             styles.submitBtn,
-            (!asset || submitting) && styles.submitDisabled,
+            (mode === "single"
+              ? !asset || submitting
+              : multiAssets.length < 2 || submitting || credits === 0) &&
+              styles.submitDisabled,
           ]}
-          disabled={!asset || submitting}
-          onPress={submit}
+          disabled={
+            mode === "single"
+              ? !asset || submitting
+              : multiAssets.length < 2 || submitting || credits === 0
+          }
+          onPress={mode === "single" ? submit : submitMulti}
           testID="start-analysis-btn"
         >
           {submitting ? (
-            <ActivityIndicator color="#000" />
+            <>
+              <ActivityIndicator color="#000" />
+              {mode === "multi" && (
+                <Text style={styles.submitText}>{progress}%</Text>
+              )}
+            </>
           ) : (
             <>
               <Ionicons name="sparkles" size={16} color="#000" />
-              <Text style={styles.submitText}>Analyse Surf Technique</Text>
+              <Text style={styles.submitText}>
+                {mode === "single" ? t("analyse_btn") : t("analyse_multi_btn")}
+              </Text>
             </>
           )}
         </TouchableOpacity>
+        {mode === "multi" && multiAssets.length < 2 && !submitting ? (
+          <Text style={styles.creditNote}>{t("need_two")}</Text>
+        ) : null}
 
         <View style={styles.tipsBox}>
           <Text style={styles.tipsLabel}>{t("best_results").toUpperCase()}</Text>
@@ -370,5 +576,82 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: 13,
     marginBottom: spacing.sm,
+  },
+  modeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  modeBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  modeBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  creditsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginLeft: "auto",
+    borderWidth: 1,
+    borderColor: `${colors.primary}55`,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  creditsText: { color: colors.primary, fontSize: 11, fontWeight: "800" },
+  multiBox: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: 10,
+  },
+  multiRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  multiName: { flex: 1, color: colors.textPrimary, fontSize: 12, fontWeight: "600" },
+  addClipBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: `${colors.primary}55`,
+    borderStyle: "dashed",
+    paddingVertical: 12,
+  },
+  addClipText: { color: colors.primary, fontSize: 12, fontWeight: "800" },
+  creditNote: { color: colors.textMuted, fontSize: 11, lineHeight: 15 },
+  iosNote: {
+    color: colors.warning,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+  buyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    paddingVertical: 12,
+  },
+  buyText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
 });

@@ -6,6 +6,8 @@ import {
   ScrollView,
   TouchableOpacity,
   ImageBackground,
+  Modal,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -16,7 +18,8 @@ import { colors, radii, spacing } from "../../src/theme";
 import { useI18n } from "../../src/i18n";
 import { haptic } from "../../src/haptics";
 import GlassCard from "../../src/components/GlassCard";
-import { DRILLS, DrillCategory } from "../../src/trainLibrary";
+import YouTubeEmbed from "../../src/components/YouTubeEmbed";
+import { DRILLS, DrillCategory, TUTORIALS } from "../../src/trainLibrary";
 
 const CATEGORIES: { key: DrillCategory | "all"; labelKey: string }[] = [
   { key: "all", labelKey: "cat_all" },
@@ -32,6 +35,9 @@ export default function TrainScreen() {
   const { t } = useI18n();
   const [cat, setCat] = useState<DrillCategory | "all">("all");
   const [latest, setLatest] = useState<Analysis | null>(null);
+  const [tutorial, setTutorial] = useState<(typeof TUTORIALS)[number] | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     try {
@@ -120,6 +126,43 @@ export default function TrainScreen() {
           )}
         </GlassCard>
 
+        {/* Video tutorials */}
+        <Text style={styles.tutLabel}>{t("video_tutorials").toUpperCase()}</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginBottom: spacing.md }}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: 10 }}
+          testID="tutorials-row"
+        >
+          {TUTORIALS.map((tu) => (
+            <TouchableOpacity
+              key={tu.id}
+              style={styles.tutCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                haptic.tap();
+                setTutorial(tu);
+              }}
+              testID={`tutorial-${tu.id}`}
+            >
+              <Image
+                source={{
+                  uri: `https://img.youtube.com/vi/${tu.youtubeId}/hqdefault.jpg`,
+                }}
+                style={styles.tutThumb}
+              />
+              <View style={styles.tutPlay}>
+                <Ionicons name="play" size={16} color="#000" />
+              </View>
+              <Text style={styles.tutTitle} numberOfLines={2}>
+                {tu.title}
+              </Text>
+              <Text style={styles.tutCat}>{t(`cat_${tu.category}`)}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
         {/* Category filter */}
         <ScrollView
           horizontal
@@ -179,6 +222,32 @@ export default function TrainScreen() {
           ))}
         </View>
       </ScrollView>
+
+      {/* Tutorial player modal */}
+      <Modal
+        visible={!!tutorial}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTutorial(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard} testID="tutorial-modal">
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle} numberOfLines={2}>
+                {tutorial?.title}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setTutorial(null)}
+                style={styles.modalClose}
+                testID="tutorial-close"
+              >
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            {tutorial && <YouTubeEmbed videoId={tutorial.youtubeId} />}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -261,4 +330,66 @@ const styles = StyleSheet.create({
   drillDesc: { color: colors.textSecondary, fontSize: 11, lineHeight: 15, marginBottom: 8 },
   goalRow: { flexDirection: "row", alignItems: "center", gap: 5 },
   goalText: { color: colors.success, fontSize: 10, fontWeight: "700", flex: 1 },
+  tutLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    letterSpacing: 2.5,
+    fontWeight: "800",
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  tutCard: { width: 180 },
+  tutThumb: {
+    width: 180,
+    height: 100,
+    borderRadius: radii.md,
+    backgroundColor: colors.surface,
+  },
+  tutPlay: {
+    position: "absolute",
+    top: 34,
+    left: 74,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tutTitle: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 6,
+    lineHeight: 16,
+  },
+  tutCat: { color: colors.primary, fontSize: 10, fontWeight: "700", marginTop: 2 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalCard: {
+    backgroundColor: colors.surfaceElevated,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    padding: spacing.md,
+  },
+  modalHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: spacing.sm,
+  },
+  modalTitle: { flex: 1, color: colors.textPrimary, fontSize: 15, fontWeight: "800" },
+  modalClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

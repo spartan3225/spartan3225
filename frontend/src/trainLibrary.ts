@@ -12,6 +12,20 @@ export type Drill = {
   improves: string[];
 };
 
+export const TUTORIALS: {
+  id: string;
+  youtubeId: string;
+  title: string;
+  category: DrillCategory;
+}[] = [
+  { id: "t1", youtubeId: "2XOIFuBhz2U", title: "Perfect Pop-Up Technique", category: "surf" },
+  { id: "t2", youtubeId: "VImJbHuZQnI", title: "Beginner Pop-Up Made Easy", category: "surf" },
+  { id: "t3", youtubeId: "dfHdY6SliKI", title: "Bottom Turn & Top Turn Basics", category: "surf" },
+  { id: "t4", youtubeId: "i510zQPYPUI", title: "Surfskate Bottom Turn Training", category: "land" },
+  { id: "t5", youtubeId: "7vH-fs_iBkU", title: "Set the Rail: Lean & Hold", category: "land" },
+  { id: "t6", youtubeId: "j9JjdMf9szM", title: "Dry-Land Pop-Up Drills", category: "mobility" },
+];
+
 const IMG = {
   surf: "https://images.unsplash.com/photo-1645499683497-22662a9b1704?crop=entropy&cs=srgb&fm=jpg&q=80&w=600",
   mobility:

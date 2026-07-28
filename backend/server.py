@@ -128,6 +128,7 @@ class User(BaseModel):
     coach_location: Optional[str] = None
     coach_public: bool = False
     preferred_language: str = "en"
+    multi_credits: int = 0
 
 
 class SessionExchangeRequest(BaseModel):
@@ -161,6 +162,7 @@ class AnalysisOut(BaseModel):
     scores: Optional[List[dict]] = None
     main_mistake: Optional[dict] = None
     key_moments: Optional[List[dict]] = None
+    video_count: Optional[int] = None
     duration_seconds: Optional[float] = None
     status: str
     created_at: datetime
@@ -726,21 +728,43 @@ async def _refine_with_claude(raw_analysis: dict, deep: bool = False, lang: str 
 
 
 async def analyse_video_with_gemini(
-    file_path: Path, mime_type: str, deep: bool = False, lang: str = "en"
+    file_path: Path,
+    mime_type: str,
+    deep: bool = False,
+    lang: str = "en",
+    extra_files: Optional[List[tuple]] = None,  # [(Path, mime), ...]
 ) -> dict:
     """Try Gemini 2.5 Pro first; fall back to Gemini 2.0 Flash on 400 BadRequest.
 
     After getting a draft from Gemini, refine it through Claude Sonnet 4.6
     for a more polished, coach-quality response.
     """
+    n_clips = 1 + len(extra_files or [])
+    multi_extra = ""
+    if n_clips > 1:
+        multi_extra = (
+            f"\n\nMULTI-CLIP MODE: You receive {n_clips} clips of the SAME surfer "
+            "from one session. Produce ONE combined analysis of the surfer, not "
+            "one per clip. Judge consistency across all waves (this strongly "
+            "informs the 'consistency' of your verdicts and the summary). "
+            "All 'timestamp' values (mistakes, main_mistake, key_moments) MUST "
+            "refer to the FIRST clip only. When a strength/mistake is clearest "
+            "in another clip, mention it in the text (e.g. 'in your second "
+            "wave...') without a timestamp."
+        )
     sys_msg = (
         SYSTEM_PROMPT_BASE
         + (SYSTEM_PROMPT_COACH_EXTRA if deep else "")
+        + multi_extra
         + _lang_instruction(lang)
     )
-    video_file = FileContentWithMimeType(
-        file_path=str(file_path), mime_type=mime_type
-    )
+    file_contents = [
+        FileContentWithMimeType(file_path=str(file_path), mime_type=mime_type)
+    ]
+    for p, m in extra_files or []:
+        file_contents.append(
+            FileContentWithMimeType(file_path=str(p), mime_type=m)
+        )
 
     draft: dict | None = None
     last_error: Exception | None = None
@@ -752,8 +776,12 @@ async def analyse_video_with_gemini(
                 system_message=sys_msg,
             ).with_model("gemini", model_name)
             msg = UserMessage(
-                text="Analyse this surfing clip in depth and respond with the strict JSON schema.",
-                file_contents=[video_file],
+                text=(
+                    "Analyse this surfing clip in depth and respond with the strict JSON schema."
+                    if n_clips == 1
+                    else f"Analyse these {n_clips} surfing clips of the same surfer as ONE combined session and respond with the strict JSON schema."
+                ),
+                file_contents=file_contents,
             )
             response = await chat.send_message(msg)
             raw = response if isinstance(response, str) else str(response)
@@ -1082,6 +1110,117 @@ async def finalize_chunked_upload(
     return await _finalize_and_start_analysis(user, analysis_id, save_path, ext, mime)
 
 
+class MultiFinalizeIn(BaseModel):
+    uploads: List[FinalizeUploadIn]
+
+
+@api_router.post("/analyses/finalize-multi", response_model=AnalysisOut)
+async def finalize_multi_upload(
+    payload: MultiFinalizeIn,
+    user: User = Depends(get_current_user),
+):
+    """Combine 2-3 chunk-uploaded clips into ONE paid multi-video analysis.
+
+    Consumes 1 multi_credit (bought via LemonSqueezy one-time purchase).
+    Does NOT touch the daily quota — it's a separate paid add-on.
+    """
+    uploads = payload.uploads
+    if not 2 <= len(uploads) <= 3:
+        raise HTTPException(status_code=400, detail="Provide 2 or 3 clips")
+    for up in uploads:
+        if not _UPLOAD_ID_RE.match(up.upload_id):
+            raise HTTPException(status_code=400, detail="Invalid upload_id")
+        q = {"user_id": user.user_id, "upload_id": up.upload_id}
+        received = await db.upload_chunks.count_documents(q)
+        if received == 0:
+            raise HTTPException(status_code=400, detail="Upload not found")
+        if received != up.total_chunks:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Upload incomplete: {received}/{up.total_chunks} chunks",
+            )
+
+    # Atomically consume one credit (race-safe).
+    res = await db.users.update_one(
+        {"user_id": user.user_id, "multi_credits": {"$gte": 1}},
+        {"$inc": {"multi_credits": -1}},
+    )
+    if res.modified_count == 0:
+        raise HTTPException(
+            status_code=402,
+            detail="No multi-video credits. Purchase one to analyse multiple clips together.",
+        )
+
+    analysis_id = f"ana_{uuid.uuid4().hex[:14]}"
+    user_dir = UPLOAD_DIR / user.user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    files: list = []  # (Path, ext, mime)
+    try:
+        for i, up in enumerate(uploads):
+            ext = (up.filename or "video.mp4").split(".")[-1].lower()
+            if ext not in {"mp4", "mov", "m4v", "webm", "avi"}:
+                ext = "mp4"
+            save_path = user_dir / f"{analysis_id}_{i}.{ext}"
+            q = {"user_id": user.user_id, "upload_id": up.upload_id}
+            cursor = db.upload_chunks.find(q).sort("chunk_index", 1)
+            written = 0
+            with save_path.open("wb") as out:
+                async for part in cursor:
+                    written += len(part["data"])
+                    if written > MAX_VIDEO_BYTES:
+                        raise HTTPException(
+                            status_code=413, detail="Video too large (max 300MB)"
+                        )
+                    out.write(part["data"])
+            await db.upload_chunks.delete_many(q)
+            files.append((save_path, ext, up.mime_type or "video/mp4"))
+    except Exception:
+        # Refund the credit if assembly failed.
+        await db.users.update_one(
+            {"user_id": user.user_id}, {"$inc": {"multi_credits": 1}}
+        )
+        for p, _, _ in files:
+            p.unlink(missing_ok=True)
+        raise
+
+    doc = {
+        "analysis_id": analysis_id,
+        "user_id": user.user_id,
+        "video_path": str(files[0][0]),
+        "video_paths": [str(p) for p, _, _ in files],
+        "video_count": len(files),
+        "is_multi": True,
+        "mime_type": files[0][2],
+        "status": "processing",
+        "created_at": datetime.now(timezone.utc),
+        "title": "Analysing...",
+        "score": 0,
+        "overall_rating": "",
+        "summary": "",
+        "strengths": [],
+        "mistakes": [],
+        "corrections": [],
+        "tips": [],
+        "drills": [],
+        "shared_with_coach_id": None,
+    }
+    await db.analyses.insert_one(dict(doc))
+
+    asyncio.create_task(
+        _run_multi_analysis_in_background(
+            analysis_id=analysis_id,
+            files=files,
+            deep=(user.tier == "coach"),
+            lang=(user.preferred_language or "en"),
+        )
+    )
+
+    final = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})
+    return AnalysisOut(
+        **{k: final[k] for k in AnalysisOut.model_fields if k in final}
+    )
+
+
 async def _finalize_and_start_analysis(
     user: User, analysis_id: str, save_path: Path, ext: str, mime: str
 ) -> AnalysisOut:
@@ -1282,6 +1421,15 @@ async def _run_analysis_in_background(
         )
         return
 
+    await _apply_ai_result(analysis_id, result)
+
+    # --- Skeleton tracking (Phase 2) ---
+    # Runs AFTER the AI result is saved so the user sees feedback ASAP; pose
+    # overlay appears when ready. CPU-bound → thread, with a hard timeout.
+    await _run_pose_extraction(analysis_id, save_path)
+
+
+async def _apply_ai_result(analysis_id: str, result: dict) -> None:
     update = {
         "status": "ready",
         "title": result.get("title") or "Surf Session",
@@ -1301,10 +1449,75 @@ async def _run_analysis_in_background(
     }
     await db.analyses.update_one({"analysis_id": analysis_id}, {"$set": update})
 
-    # --- Skeleton tracking (Phase 2) ---
-    # Runs AFTER the AI result is saved so the user sees feedback ASAP; pose
-    # overlay appears when ready. CPU-bound → thread, with a hard timeout.
-    await _run_pose_extraction(analysis_id, save_path)
+
+async def _run_multi_analysis_in_background(
+    analysis_id: str,
+    files: list,  # [(Path, ext, mime), ...] in clip order
+    deep: bool,
+    lang: str = "en",
+) -> None:
+    """Convert + GridFS-store every clip, then run ONE combined AI analysis."""
+    converted: list = []  # [(Path, mime), ...]
+    for i, (path, ext, mime) in enumerate(files):
+        try:
+            new_path, new_mime = await _convert_to_mp4_if_needed(
+                f"{analysis_id}_{i}", path, ext, mime
+            )
+        except Exception:
+            logger.exception("Multi conversion failed for clip %d — using original", i)
+            new_path, new_mime = path, mime
+        converted.append((new_path, new_mime))
+        await _store_video_in_gridfs(f"{analysis_id}_{i}", new_path)
+
+    await db.analyses.update_one(
+        {"analysis_id": analysis_id},
+        {
+            "$set": {
+                "video_paths": [str(p) for p, _ in converted],
+                "video_path": str(converted[0][0]),
+                "mime_type": converted[0][1],
+            }
+        },
+    )
+
+    try:
+        result = await asyncio.wait_for(
+            analyse_video_with_gemini(
+                converted[0][0],
+                converted[0][1],
+                deep=deep,
+                lang=lang,
+                extra_files=converted[1:],
+            ),
+            timeout=1200,
+        )
+    except Exception as e:
+        logger.exception("Multi AI analysis failed (background)")
+        await db.analyses.update_one(
+            {"analysis_id": analysis_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "summary": (
+                        "We couldn't analyse these clips. Try shorter videos "
+                        "(under 60 seconds each, MP4)."
+                    ),
+                    "error": str(e)[:300],
+                }
+            },
+        )
+        # Refund the paid credit — the user got nothing.
+        doc = await db.analyses.find_one(
+            {"analysis_id": analysis_id}, {"_id": 0, "user_id": 1}
+        )
+        if doc:
+            await db.users.update_one(
+                {"user_id": doc["user_id"]}, {"$inc": {"multi_credits": 1}}
+            )
+        return
+
+    await _apply_ai_result(analysis_id, result)
+    await _run_pose_extraction(analysis_id, converted[0][0])
 
 
 async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
@@ -1461,7 +1674,9 @@ async def get_analysis_pose(
 
 
 @api_router.get("/analyses/{analysis_id}/video")
-async def get_analysis_video(analysis_id: str, token: Optional[str] = None):
+async def get_analysis_video(
+    analysis_id: str, token: Optional[str] = None, index: int = 0
+):
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     session_doc = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
@@ -1483,14 +1698,21 @@ async def get_analysis_video(analysis_id: str, token: Optional[str] = None):
         and doc.get("shared_with_coach_id") != session_doc["user_id"]
     ):
         raise HTTPException(status_code=404, detail="Not found")
+    # Multi-video analyses: pick the requested clip (index 0..2).
+    video_paths = doc.get("video_paths") or []
+    gridfs_name = analysis_id
     path = doc.get("video_path")
+    if video_paths:
+        idx = max(0, min(index, len(video_paths) - 1))
+        path = video_paths[idx]
+        gridfs_name = f"{analysis_id}_{idx}"
     if path and Path(path).exists():
         return FileResponse(path, media_type=doc.get("mime_type") or "video/mp4")
 
     # Multi-replica fallback: this pod doesn't have the file locally — stream
     # it from GridFS (shared storage in MongoDB).
     try:
-        grid_out = await gridfs_videos.open_download_stream_by_name(analysis_id)
+        grid_out = await gridfs_videos.open_download_stream_by_name(gridfs_name)
     except Exception:
         raise HTTPException(status_code=404, detail="Video file missing")
 

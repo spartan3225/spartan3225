@@ -67,6 +67,7 @@ export default function AnalysisDetail() {
   const [overlayOn, setOverlayOn] = useState(false);
   const [videoTime, setVideoTime] = useState(0);
   const [videoW, setVideoW] = useState(0);
+  const [clipIdx, setClipIdx] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -104,9 +105,12 @@ export default function AnalysisDetail() {
     return () => clearInterval(timer);
   }, [id, data]);
 
-  const player = useVideoPlayer(videoUrl || null, (p) => {
-    p.loop = true;
-  });
+  const player = useVideoPlayer(
+    videoUrl ? `${videoUrl}&index=${clipIdx}` : null,
+    (p) => {
+      p.loop = true;
+    }
+  );
 
   // Fetch skeleton-tracking data (retry while backend is still processing it)
   useEffect(() => {
@@ -325,7 +329,7 @@ export default function AnalysisDetail() {
                   {SPEEDS[speedIdx]}x
                 </Text>
               </TouchableOpacity>
-              {poseStatus === "ready" && pose ? (
+              {poseStatus === "ready" && pose && clipIdx === 0 ? (
                 <TouchableOpacity
                   style={[styles.skelBtn, overlayOn && styles.speedBtnActive]}
                   onPress={() => {
@@ -371,6 +375,35 @@ export default function AnalysisDetail() {
             </View>
           )}
         </View>
+
+        {/* Multi-video: clip selector */}
+        {(data.video_count || 1) > 1 && (
+          <View style={styles.clipRow} testID="clip-selector">
+            {Array.from({ length: data.video_count || 1 }).map((_, i) => (
+              <TouchableOpacity
+                key={i}
+                style={[styles.clipChip, clipIdx === i && styles.clipChipActive]}
+                onPress={() => {
+                  haptic.tap();
+                  setClipIdx(i);
+                  setOverlayOn(false);
+                }}
+                testID={`clip-chip-${i}`}
+              >
+                <Ionicons
+                  name="film-outline"
+                  size={12}
+                  color={clipIdx === i ? "#000" : colors.textSecondary}
+                />
+                <Text
+                  style={[styles.clipChipText, clipIdx === i && { color: "#000" }]}
+                >
+                  {t("clip")} {i + 1}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Key moments — clickable, jump the video */}
         {data.status === "ready" && (data.key_moments?.length || 0) > 0 && (
@@ -931,6 +964,25 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,229,255,0.04)",
   },
   poseNoteText: { color: colors.textMuted, fontSize: 11 },
+  clipRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  clipChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    backgroundColor: colors.glass,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  clipChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  clipChipText: { color: colors.textSecondary, fontSize: 12, fontWeight: "800" },
   momentChip: {
     borderWidth: 1,
     borderRadius: radii.md,

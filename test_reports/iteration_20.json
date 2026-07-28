@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 20 — MULTI-VIDEO PAID ADD-ON + TRAIN TUTORIALS verified end-to-end with ZERO regressions. Backend: 15/15 pytest cases pass in /app/backend/tests/test_iter20_multi_video.py (~2s). finalize-multi validation: 1 upload -> 400 'Provide 2 or 3 clips'; bad hex format -> 400 'Invalid upload_id'; nonexistent upload_id -> 400 'Upload not found'; coach user (0 multi_credits) after uploading 2 valid tiny chunks -> 402 'No multi-video credits' (credit gate works AFTER chunk validation). /auth/me returns multi_credits field (demo=1, coach=0). POST /api/payments/lemonsqueezy/checkout {plan_id:'multi'} -> 400 'Invalid plan' (variant env empty, expected); {plan_id:'learn'} -> 200 with real lemonsqueezy checkout URL (regression OK — payment NOT completed). Existing multi analysis ana_cf496d925cac4b: GET returns video_count=2, status=ready with 7 key_moments; /video?token=..&index=0 and index=1 both stream 200 (video/mp4); index=5 correctly clamps to last clip (200). Regression: single chunk-upload validation still rejects bad upload_id, /analyses/quota returns 200 with tier, /analyses list contains multi analysis. Demo user's 1 multi_credit preserved through testing. Frontend (mobile viewport 390x844, demo_token_active): upload screen — mode-toggle visible, mode-multi tap shows credits-pill 'Credits: 1', add-clip-btn present, start-analysis-btn disabled (aria-disabled=true) with <2 clips, need_two note 'Add at least 2 clips' visible, buy-credit-btn correctly hidden (credits>0). /analysis/ana_cf496d925cac4b — analysis-detail-screen loads, clip-selector visible with clip-chip-0 (bg #00E5FF active) and clip-chip-1 (bg rgba(255,255,255,0.06) inactive); tapping clip-chip-1 swaps highlight (chip1 becomes #00E5FF, chip0 goes muted); skeleton-toggle-btn visible on clip 0, correctly HIDDEN on clip 1 (pose only ran on clip 1's frames); scores-grid + key-moments-section render. Train tab — train-screen visible, tutorials-row shows all 6 tutorial cards (t1-t6), tapping tutorial-t1 opens tutorial-modal with embedded YouTube iframe (src=youtube.com/embed/2XOIFuBhz2U), tutorial-close dismisses it. Regression: Home, AI Review (filter-all present), Progress tabs all render without errors. Zero critical console errors (only pre-existing RN deprecation warnings + expected 401 for video element without token + 'no supported sources' from headless chromium video element which is expected).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/analyses/finalize-multi", "issue": "When 402 is returned (no multi_credits), the previously uploaded chunks in db.upload_chunks are NOT cleaned up — orphaned chunks accumulate for users who try to finalize without credits. Consider deleting the uploads before the 402 raise, or a background cleanup TTL. Non-blocking (chunks fit in normal upload_chunks lifecycle)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecations (pre-existing carried from iter18/19)", "issue": "Console still emits 'Image: style.resizeMode is deprecated. Please use props.resizeMode' and 'props.pointerEvents is deprecated. Use style.pointerEvents' + 'Animated: useNativeDriver is not supported'. Not a new regression. Reference: iter19 report."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter20_multi_video.py",
+    "/app/test_reports/pytest/iteration_20_multi.xml"
+  ],
+  "action_items": [
+    "(optional / minor) In finalize_multi_upload at /app/backend/server.py:1148, delete the just-validated upload_chunks before raising 402 to avoid orphaned upload rows when a user attempts to finalize without credits.",
+    "(carry-over from iter18/19) Migrate Image style.resizeMode → props.resizeMode and gate Animated useNativeDriver:true behind Platform.OS !== 'web'.",
+    "(carry-over) server.py is now 2338 lines — split into routers (auth, uploads, analyses, coach, payments) for maintainability. Non-blocking."
+  ],
+  "critical_code_review_comments": [
+    "finalize-multi credit consumption is race-safe (atomic $inc conditional on multi_credits>=1, refunds on assembly failure). Good.",
+    "Video endpoint /analyses/{id}/video clamps out-of-range index=5 to last clip via max(0, min(index, len-1)) — safe against negative/huge indexes. Good.",
+    "LemonSqueezy checkout has TWO guards (line 156 catches missing/empty variant, line 164 catches whitespace-only variant) — belt-and-braces, works. Note: line 164 is unreachable given line 156 already returns 400 on empty string; keep for defense.",
+    "YouTubeEmbed uses React.createElement('iframe', …) on web + react-native-webview on native — clean cross-platform. iframe allow attribute correctly includes autoplay/encrypted-media/picture-in-picture.",
+    "TUTORIALS array in trainLibrary.ts uses external YouTube thumbs (img.youtube.com/vi/{id}/hqdefault.jpg) — works but no fallback if a videoId is unlisted/removed. Consider Image onError -> local placeholder."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter20_multi_video.py (new — 15 tests)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (all flows verified — upload multi mode, analysis clip selector, train tutorials modal, regression tabs)"},
+  "seed_data_creation": "None. Cleaned up 2 orphaned upload_chunks for user_coach_67890 that were left behind by the 402 test (see minor issue above). Demo user's multi_credits preserved at 1.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 20 multi-video paid add-on regression suite lives in /app/backend/tests/test_iter20_multi_video.py (15 tests, ~2s). Key testIDs stable: upload-screen, mode-toggle, mode-single, mode-multi, credits-pill, add-clip-btn, buy-credit-btn (hidden when credits>0), ios-purchase-note (only on iOS), start-analysis-btn, multi-clip-{i}, multi-remove-{i}, clip-selector, clip-chip-{i}, skeleton-toggle-btn (only shown on clip 0 for multi analyses because pose runs on clip 1's frames only — expected behaviour), train-screen, tutorials-row, tutorial-t1..t6, tutorial-modal, tutorial-close. Backend contract: POST /api/analyses/finalize-multi expects {uploads:[{upload_id,filename,mime_type,total_chunks}]}, uploads len 2-3, upload_id ^[a-f0-9]{16,64}$, all chunks must be present. Returns 400 (validation) / 402 (no credits) / AnalysisOut with video_count on success. GET /api/analyses/{id}/video?token=..&index=N — index clamps [0, len-1]. LEMONSQUEEZY_VARIANT_MULTI is intentionally empty until user configures it — 'multi' checkout returns 400 'Invalid plan'. When creating orphan chunks during 402 tests, clean them via db.upload_chunks.deleteMany({user_id:'user_coach_67890'}).",
+  "rca_of_issue": "N/A — no bugs. One minor observation: finalize-multi does not clean upload_chunks on 402 refund path (validation succeeds THEN credit check fails), leaving orphan chunks in Mongo. Fix (optional): `await db.upload_chunks.delete_many({'user_id': user.user_id, 'upload_id': {'$in': [u.upload_id for u in uploads]}})` before the 402 raise, OR rely on a periodic cleanup job."
+}

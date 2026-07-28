@@ -68,6 +68,7 @@ export type User = {
   coach_location?: string | null;
   coach_public?: boolean;
   preferred_language?: string;
+  multi_credits?: number;
 };
 
 export type AnalysisListItem = {
@@ -425,6 +426,115 @@ export function getVideoStreamUrl(analysisId: string, token: string) {
   return `${API_URL}/analyses/${analysisId}/video?token=${encodeURIComponent(
     token
   )}`;
+}
+
+// ---- Multi-video (paid add-on) ----
+export type ChunkedUploadRef = {
+  upload_id: string;
+  filename: string;
+  mime_type: string;
+  total_chunks: number;
+};
+
+/** Chunk-upload a single file WITHOUT finalizing (used by multi-video mode). */
+export async function uploadChunksForFile(
+  uri: string,
+  name: string,
+  mimeType: string,
+  onProgress?: (pct: number) => void
+): Promise<ChunkedUploadRef> {
+  const token = await getToken();
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
+  const uploadId = makeUploadId();
+
+  if (Platform.OS === "web") {
+    const blobRes = await fetch(uri);
+    const blob = await blobRes.blob();
+    const finalType = blob.type || mimeType || "video/mp4";
+    const total = Math.max(1, Math.ceil(blob.size / CHUNK_SIZE));
+    for (let i = 0; i < total; i++) {
+      const part = blob.slice(
+        i * CHUNK_SIZE,
+        Math.min((i + 1) * CHUNK_SIZE, blob.size),
+        finalType
+      );
+      const res = await postFormWithRetry(
+        `${API_URL}/uploads/chunk`,
+        () => {
+          const form = new FormData();
+          form.append("upload_id", uploadId);
+          form.append("chunk_index", String(i));
+          form.append("total_chunks", String(total));
+          form.append("file", part as any, `${name}.part${i}`);
+          return form;
+        },
+        authHeaders
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Upload failed: ${res.status} ${text}`);
+      }
+      onProgress?.(Math.round(((i + 1) / total) * 100));
+    }
+    return {
+      upload_id: uploadId,
+      filename: name,
+      mime_type: finalType,
+      total_chunks: total,
+    };
+  }
+
+  // Native
+  let size = 0;
+  try {
+    const info = await FileSystem.getInfoAsync(uri, { size: true } as any);
+    size = (info as any)?.size || 0;
+  } catch {
+    size = 0;
+  }
+  if (!size) throw new Error("Could not read the selected video");
+  const total = Math.max(1, Math.ceil(size / CHUNK_SIZE));
+  for (let i = 0; i < total; i++) {
+    const b64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+      position: i * CHUNK_SIZE,
+      length: Math.min(CHUNK_SIZE, size - i * CHUNK_SIZE),
+    });
+    const res = await postFormWithRetry(
+      `${API_URL}/uploads/chunk`,
+      () => {
+        const form = new FormData();
+        form.append("upload_id", uploadId);
+        form.append("chunk_index", String(i));
+        form.append("total_chunks", String(total));
+        form.append("chunk_b64", b64);
+        return form;
+      },
+      authHeaders
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Upload failed: ${res.status} ${text}`);
+    }
+    onProgress?.(Math.round(((i + 1) / total) * 100));
+  }
+  return {
+    upload_id: uploadId,
+    filename: name,
+    mime_type: mimeType || "video/mp4",
+    total_chunks: total,
+  };
+}
+
+export async function finalizeMultiUpload(
+  uploads: ChunkedUploadRef[]
+): Promise<Analysis> {
+  return apiFetch<Analysis>("/analyses/finalize-multi", {
+    method: "POST",
+    body: JSON.stringify({ uploads }),
+  });
 }
 
 // ---- Skeleton tracking (pose) ----

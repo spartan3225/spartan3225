@@ -40,6 +40,17 @@ LS_VARIANTS = {
     "learn": os.environ.get("LEMONSQUEEZY_VARIANT_LEARN", ""),
     "advanced": os.environ.get("LEMONSQUEEZY_VARIANT_ADVANCED", ""),
     "pro": os.environ.get("LEMONSQUEEZY_VARIANT_PRO", ""),
+    # One-time add-on: 1 credit = 1 multi-video (up to 3 clips) analysis
+    "multi": os.environ.get("LEMONSQUEEZY_VARIANT_MULTI", ""),
+}
+
+# One-time purchases (not subscriptions)
+LS_ADDONS = {
+    "multi": {
+        "name": "Multi-Video Analysis",
+        "amount": 9.0,
+        "currency": "usd",
+    },
 }
 
 # Public plan catalogue (matches what the frontend paywall renders).
@@ -150,6 +161,11 @@ def attach(app_router: APIRouter, db, get_current_user, paid_tiers_setter):
             )
 
         variant_id = LS_VARIANTS[req.plan_id]
+        if not variant_id or not str(variant_id).strip('"'):
+            raise HTTPException(
+                status_code=503,
+                detail="This product is not configured yet. Please try again later.",
+            )
         origin = req.origin_url.rstrip("/")
         success_url = (
             f"{origin}/payment-success?ls_plan={req.plan_id}"
@@ -305,7 +321,47 @@ def attach(app_router: APIRouter, db, get_current_user, paid_tiers_setter):
             else:
                 active = sub_status in active_states
 
-            if active and plan_id in LS_PLANS:
+            if active and plan_id == "multi":
+                # One-time multi-video credit. Idempotent per LS order id.
+                order_id = str(data.get("id") or "")
+                now = datetime.now(timezone.utc)
+                already = None
+                if order_id:
+                    already = await db.applied_orders.find_one(
+                        {"order_id": order_id, "plan_id": "multi"}
+                    )
+                if not already:
+                    if order_id:
+                        await db.applied_orders.insert_one(
+                            {
+                                "order_id": order_id,
+                                "plan_id": "multi",
+                                "user_id": user_id,
+                                "applied_at": now,
+                            }
+                        )
+                    await db.users.update_one(
+                        {"user_id": user_id},
+                        {"$inc": {"multi_credits": 1}},
+                    )
+                    await db.payment_transactions.update_many(
+                        {"user_id": user_id, "plan_id": "multi", "applied": False},
+                        {
+                            "$set": {
+                                "applied": True,
+                                "applied_at": now,
+                                "status": "complete",
+                                "payment_status": "paid",
+                                "ls_order_id": order_id,
+                            }
+                        },
+                    )
+                    logger.info(
+                        "Granted 1 multi-video credit to user=%s (order=%s)",
+                        user_id,
+                        order_id,
+                    )
+            elif active and plan_id in LS_PLANS:
                 interval = LS_PLANS[plan_id]["interval_days"]
                 now = datetime.now(timezone.utc)
                 user_doc = await db.users.find_one(

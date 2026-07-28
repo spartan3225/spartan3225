@@ -167,6 +167,16 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - Verified: testing_agent iteration_18 (17/17 backend + full frontend E2E incl. language switch, old-schema render, video controls). Web export regenerated to /app/backend/static_web (user must Re-publish for live site).
 - NOTE: new analyses must be run to see the new scores/key_moments (old ones show legacy layout).
 
+## Phases 2-4 + iPhone 6.9" screenshots (July 2026)
+- iPhone 6.9" App Store screenshots: 5 shots at exactly 1320x2868 in /app/frontend/public/store-assets/ (iphone69-01..05 + iphone69-screenshots.zip). Also copied to /app/backend/static_web/store-assets/ — downloadable at /store-assets/iphone69-screenshots.zip.
+- PHASE 2 Skeleton tracking: /app/backend/pose_tracker.py — MediaPipe EfficientDet-Lite0 person detection (model at /app/backend/models_ai/efficientdet_lite0.tflite, needed because surfers are tiny in wide footage) + MediaPipe Pose on expanded crop, 8fps sampling, temporal bbox tracking, 300s timeout, runs via asyncio.to_thread AFTER AI result saved in _run_analysis_in_background. Stores in db.pose_data collection (separate from analyses; ~45KB/clip) + pose_status field. Endpoint GET /api/analyses/{id}/pose. mediapipe==0.10.18 installed (protobuf pinned 4.25.9 — emergentintegrations verified still working). NOTE: local ffmpeg binary missing in dev pod; use imageio_ffmpeg bundled exe for CLI work; cv2.VideoCapture works fine for pose.
+- Frontend Phase 2: PoseOverlay.tsx (SVG bones/joints/CG/motion-trail/velocity-arrow/knee+back angle labels), skeleton toggle on analysis video (snaps playhead into tracked range when enabled, contentFit switches to 'contain' for coordinate accuracy), MetricChart.tsx heat-colored Speed/Compression graphs from pose metrics.
+- PHASE 3: Progress tab adds RadarChart (skill radar, 6 axes) + streaks row (current/longest/best wave). Review tab adds score-band filters (all/80+/50-79/<50) + Recent↔Best sort toggle.
+- PHASE 4: /compare/[id] Pro Comparison screen — pro selector (Yago Dora active; Medina/JJF/Italo 'coming soon'), split-screen You-vs-Pro (pro footage placeholder — USER HAS NO LICENSED FOOTAGE, benchmarks in src/proBenchmarks.ts are static reference data by design, modular for adding footage/pose later), You-vs-Pro radar + per-category bars + ghost overlay placeholder. Entry: 'Compare vs Pro' button on analysis page.
+- Demo pose data seeded for ana_demoupgrade01 + ana_ipadshot001 (frames 1.2s-13.5s).
+- Verified: testing_agent iteration_19 (13/13 backend + 31/31 frontend, zero regressions). Web export regenerated. User must Re-publish.
+- Remaining backlog: Train video tutorials (needs video content), AI drawing on mistakes beyond angle overlays, wave/board analysis, multi-video upload premium add-on, friend coupon, Google Play publishing (blocked on Google identity verification).
+
 ## Stuck-analysis + logout fixes (June 2026)
 - Analysis page now polls every 5s while processing; auto-updates to ready/failed; failed banner with 'quota not used' + UPLOAD AGAIN button; score pill only when ready.
 - Backend: lazy stale watchdog on GET /analyses/{id} (processing >20min -> failed on read, replica-safe); AI pipeline hard timeout 900s.
