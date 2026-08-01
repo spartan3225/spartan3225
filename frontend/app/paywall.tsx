@@ -185,8 +185,8 @@ export default function PaywallScreen() {
                   color={colors.textMuted}
                 />
                 <Text style={styles.nativeNoteText}>
-                  Subscriptions are managed from your SurfCoach23 account on
-                  the web. Your active plan is shown below.
+                  Your active plan is shown below. Upgrading is not available
+                  in this version of the app.
                 </Text>
               </View>
             )}

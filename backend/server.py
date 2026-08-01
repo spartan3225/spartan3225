@@ -2298,6 +2298,17 @@ logging.basicConfig(
 @app.on_event("startup")
 async def _ensure_indexes():
     try:
+        # Apple review demo account must never hit a quota wall (no way to
+        # pay inside the iOS app). Idempotent: only bumps the free tier.
+        await db.users.update_one(
+            {"email": "qa.tester@surfcoach23.com", "tier": "free"},
+            {"$set": {"tier": "pro", "subscription_status": "active"}},
+        )
+    except Exception:
+        logging.getLogger("surfai").warning(
+            "reviewer account upgrade failed", exc_info=True
+        )
+    try:
         # Orphaned chunks auto-expire after 24h
         await db.upload_chunks.create_index(
             "created_at", expireAfterSeconds=86400

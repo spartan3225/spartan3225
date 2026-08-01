@@ -178,6 +178,15 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - Google Play: still BLOCKED on Google identity verification (user confirmed still waiting).
 - PENDING FROM USER: LemonSqueezy multi product variant ID (+ chosen price) → put in backend/.env LEMONSQUEEZY_VARIANT_MULTI and restart.
 
+## iOS readiness fixes (Aug 2026)
+- Ran expo-appstore-readiness-review skill. Fixed the blocker + warnings:
+  - ios_purchase_note (all 6 langs) neutralized: "Multi-video analysis is not available in this version." (was steering to website — Apple 3.1.1)
+  - paywall.tsx native note neutralized (removed "on the web" wording)
+  - Startup task in server.py upgrades qa.tester@surfcoach23.com from free→pro (idempotent) so Apple reviewer never hits quota wall — applies to PROD on next deploy
+- Remaining warnings (accepted/manual): SIWA token revocation on account deletion not implemented; "Coming soon" labels in Compare screen; App Store Connect privacy labels/review notes are manual
+- Gave user URLs for App Store Connect: Marketing https://surfcoach23.com, Privacy https://wave-motion-ai.emergent.host/privacy (custom-domain forwarding drops paths — don't use surfcoach23.com/privacy), Support /support
+- Web export regenerated → static_web. User must Publish + new builds.
+
 ## Phases 2-4 + iPhone 6.9" screenshots (July 2026)
 - iPhone 6.9" App Store screenshots: 5 shots at exactly 1320x2868 in /app/frontend/public/store-assets/ (iphone69-01..05 + iphone69-screenshots.zip). Also copied to /app/backend/static_web/store-assets/ — downloadable at /store-assets/iphone69-screenshots.zip.
 - PHASE 2 Skeleton tracking: /app/backend/pose_tracker.py — MediaPipe EfficientDet-Lite0 person detection (model at /app/backend/models_ai/efficientdet_lite0.tflite, needed because surfers are tiny in wide footage) + MediaPipe Pose on expanded crop, 8fps sampling, temporal bbox tracking, 300s timeout, runs via asyncio.to_thread AFTER AI result saved in _run_analysis_in_background. Stores in db.pose_data collection (separate from analyses; ~45KB/clip) + pose_status field. Endpoint GET /api/analyses/{id}/pose. mediapipe==0.10.18 installed (protobuf pinned 4.25.9 — emergentintegrations verified still working). NOTE: local ffmpeg binary missing in dev pod; use imageio_ffmpeg bundled exe for CLI work; cv2.VideoCapture works fine for pose.
