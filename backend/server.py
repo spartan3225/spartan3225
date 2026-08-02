@@ -12,6 +12,7 @@ import base64
 import shutil
 import asyncio
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor
 from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field, EmailStr
@@ -26,6 +27,38 @@ load_dotenv(ROOT_DIR / ".env")
 
 UPLOAD_DIR = ROOT_DIR / "uploads" / "videos"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# --- Pose extraction runs in a dedicated single-worker process pool ---
+# MediaPipe/OpenCV are native and hold the GIL; running them in-process (even in
+# a thread) stalls the FastAPI event loop and makes concurrent video streaming
+# slow / 502. A separate process keeps the API responsive. max_workers=1 bounds
+# memory (MediaPipe is heavy).
+_pose_pool: Optional[ProcessPoolExecutor] = None
+
+
+def _pose_worker(path: str) -> dict:
+    # Imported inside the child process so the model loads there, not in the API.
+    from pose_tracker import extract_pose_data
+
+    return extract_pose_data(path)
+
+
+def _get_pose_pool() -> ProcessPoolExecutor:
+    global _pose_pool
+    if _pose_pool is None:
+        _pose_pool = ProcessPoolExecutor(max_workers=1)
+    return _pose_pool
+
+
+def _reset_pose_pool() -> None:
+    global _pose_pool
+    old = _pose_pool
+    _pose_pool = None
+    if old is not None:
+        try:
+            old.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            pass
 
 # MongoDB connection
 mongo_url = os.environ["MONGO_URL"]
@@ -1601,7 +1634,6 @@ async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
         await db.analyses.update_one(
             {"analysis_id": analysis_id}, {"$set": {"pose_status": "processing"}}
         )
-        from pose_tracker import extract_pose_data
 
         # Retry once: MediaPipe can occasionally fail on the first pass
         # (transient decode/memory hiccup) but succeed on a clean retry.
@@ -1609,11 +1641,19 @@ async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
         last_err: Exception | None = None
         for attempt in range(2):
             try:
+                # Run in a SEPARATE PROCESS (not a thread): MediaPipe/OpenCV are
+                # native C extensions that hold the GIL during CPU work, which
+                # would otherwise stall the web server's event loop and make
+                # concurrent video streaming slow / 502. A process pool keeps
+                # the API responsive while pose extraction runs.
+                loop = asyncio.get_running_loop()
                 data = await asyncio.wait_for(
-                    asyncio.to_thread(extract_pose_data, str(save_path)),
+                    loop.run_in_executor(
+                        _get_pose_pool(), _pose_worker, str(save_path)
+                    ),
                     timeout=300,
                 )
-                if data.get("frames"):
+                if data and data.get("frames"):
                     break
                 last_err = RuntimeError("no pose frames detected")
             except Exception as e:
@@ -1622,6 +1662,8 @@ async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
                     "pose extraction attempt %d/2 failed for %s: %s",
                     attempt + 1, analysis_id, str(e)[:160],
                 )
+                # A crashed worker breaks the pool — rebuild it for the retry.
+                _reset_pose_pool()
             await asyncio.sleep(1)
         if not data or not data.get("frames"):
             raise last_err or RuntimeError("no pose frames detected")
@@ -2439,4 +2481,5 @@ async def _ensure_indexes():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    _reset_pose_pool()
     client.close()
