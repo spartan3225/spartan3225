@@ -1772,6 +1772,37 @@ async def _fail_if_stale(doc: dict) -> dict:
     return doc
 
 
+# ---------------- Pro Reference clips (royalty-free, skeleton-tracked) ----------------
+# Real surf footage sourced from Pexels (Free-to-use / commercial license).
+# Clips + precomputed MediaPipe pose JSON live in static_assets/pro/.
+PRO_ASSETS_DIR = ROOT_DIR / "static_assets" / "pro"
+PRO_CLIP_IDS = {"8775726", "4927323", "4929633", "14435086"}
+
+
+@api_router.get("/pro/{clip_id}/video")
+async def get_pro_video(clip_id: str):
+    if clip_id not in PRO_CLIP_IDS:
+        raise HTTPException(status_code=404, detail="Not found")
+    path = PRO_ASSETS_DIR / f"small_{clip_id}.mp4"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Clip missing")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@api_router.get("/pro/{clip_id}/pose")
+async def get_pro_pose(clip_id: str):
+    if clip_id not in PRO_CLIP_IDS:
+        raise HTTPException(status_code=404, detail="Not found")
+    path = PRO_ASSETS_DIR / f"pose_{clip_id}.json"
+    if not path.is_file():
+        return {"status": "none", "data": None}
+    try:
+        with path.open("r") as f:
+            return {"status": "ready", "data": json.load(f)}
+    except Exception:
+        return {"status": "failed", "data": None}
+
+
 @api_router.get("/analyses/{analysis_id}", response_model=AnalysisOut)
 async def get_analysis(analysis_id: str, user: User = Depends(get_current_user)):
     doc = await db.analyses.find_one({"analysis_id": analysis_id}, {"_id": 0})

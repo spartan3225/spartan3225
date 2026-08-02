@@ -1,24 +1,24 @@
-// Pro Reference benchmarks for Comparison Mode.
+// Pro Reference clips for Comparison Mode.
 //
-// LEGAL NOTE: To stay 100% compliant for commercial App/Play Store use, these
-// are GENERIC "world-tour level" reference archetypes — NOT named professional
-// athletes. Using a real pro's name/likeness/footage requires that athlete's
-// personal licensing agreement, which stock libraries do NOT grant. Each entry
-// represents a *style* of elite surfing so users can benchmark their technique.
+// These are REAL surfing clips sourced from Pexels under its Free-to-use /
+// commercial license (safe for a paid app — no named-athlete likeness). Each
+// clip is skeleton-tracked server-side; the Compare screen plays the clip with
+// the pro's skeleton overlay next to the user's wave.
 //
-// When you obtain a properly licensed elite-surfer clip (Pond5 / Shutterstock /
-// iStock — commercial license), just set `footage` to the video URL and
-// `available: true`. Adding a new reference = adding one object here.
+// Served by the backend: GET /api/pro/{clipId}/video and /api/pro/{clipId}/pose
+// To add / swap footage: drop the mp4 + pose JSON in backend/static_assets/pro
+// and register the id in PRO_CLIP_IDS (server.py). Buy maneuver-specific pro
+// clips (Pond5/Shutterstock) later and swap the clipId to upgrade any entry.
 
 export type ProBenchmark = {
-  id: string;
-  name: string; // localization key -> resolved in the Compare screen
+  id: string; // maneuver id
+  clipId: string; // backend reference clip id
+  name: string; // i18n key resolved in the Compare screen
   stance: string;
   country: string;
   available: boolean;
   image: string;
   scores: Record<string, number>;
-  footage?: string | null; // video URL once licensed footage is added
 };
 
 const base = (overrides: Record<string, number> = {}): Record<string, number> => ({
@@ -39,50 +39,69 @@ const base = (overrides: Record<string, number> = {}): Record<string, number> =>
   ...overrides,
 });
 
-// `name` values are i18n keys (see i18n.tsx pro_ref_* entries).
+const thumb = (id: string) =>
+  `https://images.pexels.com/videos/${id}/pexels-photo-${id}.jpeg?auto=compress&cs=tinysrgb&w=600`;
+
+// Six core maneuvers -> real reference clips (skeleton-tracked).
 export const PRO_BENCHMARKS: ProBenchmark[] = [
   {
-    id: "power",
-    name: "pro_ref_power",
+    id: "bottom_turn",
+    clipId: "4927323",
+    name: "maneuver_bottom_turn",
     stance: "Regular",
     country: "🌊",
     available: true,
-    image:
-      "https://images.unsplash.com/photo-1502933691298-84fc14542831?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000",
-    scores: base({ power: 98, rail_control: 98, bottom_turn: 97 }),
-    footage: null,
+    image: thumb("4927323"),
+    scores: base({ bottom_turn: 98, rail_control: 98, power: 97 }),
   },
   {
-    id: "progressive",
-    name: "pro_ref_progressive",
-    stance: "Goofy",
-    country: "🏄",
-    available: false,
-    image:
-      "https://images.unsplash.com/photo-1455729552865-3658a5d39692?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000",
-    scores: base({ take_off: 98, top_turn: 98, style: 97 }),
-    footage: null,
-  },
-  {
-    id: "flow",
-    name: "pro_ref_flow",
+    id: "top_turn",
+    clipId: "4929633",
+    name: "maneuver_top_turn",
     stance: "Regular",
-    country: "🌀",
-    available: false,
-    image:
-      "https://images.unsplash.com/photo-1531722569936-825d3dd91b15?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000",
-    scores: base({ surf_flow: 98, style: 98, timing: 97 }),
-    footage: null,
+    country: "🌊",
+    available: true,
+    image: thumb("4929633"),
+    scores: base({ top_turn: 98, compression: 97, style: 97 }),
   },
   {
-    id: "technical",
-    name: "pro_ref_technical",
-    stance: "Goofy",
-    country: "🎯",
-    available: false,
-    image:
-      "https://images.unsplash.com/photo-1544551763-46a013bb70d5?crop=entropy&cs=srgb&fm=jpg&q=85&w=1000",
-    scores: base({ compression: 98, body_position: 98, balance: 98 }),
-    footage: null,
+    id: "snap",
+    clipId: "14435086",
+    name: "maneuver_snap",
+    stance: "Regular",
+    country: "🌊",
+    available: true,
+    image: thumb("14435086"),
+    scores: base({ top_turn: 98, timing: 97, power: 97 }),
+  },
+  {
+    id: "cutback",
+    clipId: "4929633",
+    name: "maneuver_cutback",
+    stance: "Regular",
+    country: "🌊",
+    available: true,
+    image: thumb("4929633"),
+    scores: base({ surf_flow: 98, rail_control: 97, wave_reading: 97 }),
+  },
+  {
+    id: "roundhouse",
+    clipId: "4927323",
+    name: "maneuver_roundhouse",
+    stance: "Regular",
+    country: "🌊",
+    available: true,
+    image: thumb("4927323"),
+    scores: base({ surf_flow: 98, timing: 98, style: 97 }),
+  },
+  {
+    id: "floater",
+    clipId: "8775726",
+    name: "maneuver_floater",
+    stance: "Regular",
+    country: "🌊",
+    available: true,
+    image: thumb("8775726"),
+    scores: base({ balance: 98, body_position: 97, recovery: 97 }),
   },
 ];

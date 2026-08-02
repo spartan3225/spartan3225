@@ -570,6 +570,17 @@ export async function getPoseData(
   return apiFetch(`/analyses/${analysisId}/pose`);
 }
 
+// ---- Pro reference clips (royalty-free, skeleton-tracked) ----
+export function getProVideoUrl(clipId: string) {
+  return `${API_URL}/pro/${clipId}/video`;
+}
+
+export async function getProPose(
+  clipId: string
+): Promise<{ status: string; data: PoseData | null }> {
+  return apiFetch(`/pro/${clipId}/pose`);
+}
+
 // ---- Quotas, plans, payments ----
 export type Quota = {
   tier: string;

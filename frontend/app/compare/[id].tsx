@@ -18,12 +18,16 @@ import {
   getAnalysis,
   getToken,
   getVideoStreamUrl,
+  getProVideoUrl,
+  getProPose,
+  PoseData,
 } from "../../src/api";
 import { colors, radii, scoreColor, spacing, SCORE_CATEGORIES } from "../../src/theme";
 import { useI18n } from "../../src/i18n";
 import { haptic } from "../../src/haptics";
 import GlassCard from "../../src/components/GlassCard";
 import RadarChart from "../../src/components/RadarChart";
+import PoseOverlay from "../../src/components/PoseOverlay";
 import { PRO_BENCHMARKS } from "../../src/proBenchmarks";
 
 const RADAR_KEYS = [
@@ -42,7 +46,14 @@ export default function CompareScreen() {
   const [data, setData] = useState<Analysis | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [proId, setProId] = useState("yago_dora");
+  const [proId, setProId] = useState("bottom_turn");
+  const [proPose, setProPose] = useState<PoseData | null>(null);
+  const [proTime, setProTime] = useState(0);
+  const [proLayout, setProLayout] = useState({ w: 0, h: 0 });
+
+  const pro =
+    PRO_BENCHMARKS.find((p) => p.id === proId) || PRO_BENCHMARKS[0];
+  const proVideoUrl = getProVideoUrl(pro.clipId);
 
   useEffect(() => {
     (async () => {
@@ -56,10 +67,41 @@ export default function CompareScreen() {
     })();
   }, [id]);
 
+  // Load the pro reference skeleton whenever the selected maneuver changes.
+  useEffect(() => {
+    let cancelled = false;
+    setProPose(null);
+    (async () => {
+      try {
+        const res = await getProPose(pro.clipId);
+        if (!cancelled && res.status === "ready") setProPose(res.data);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pro.clipId]);
+
   const player = useVideoPlayer(videoUrl || null, (p) => {
     p.loop = true;
     p.muted = true;
   });
+
+  const proPlayer = useVideoPlayer(proVideoUrl || null, (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+
+  // Ticker to sync the skeleton overlay to the reference video time.
+  useEffect(() => {
+    const t = setInterval(() => {
+      try {
+        setProTime(proPlayer.currentTime || 0);
+      } catch {}
+    }, 100);
+    return () => clearInterval(t);
+  }, [proPlayer]);
 
   if (loading) {
     return (
@@ -69,7 +111,7 @@ export default function CompareScreen() {
     );
   }
 
-  const pro = PRO_BENCHMARKS.find((p) => p.id === proId) || PRO_BENCHMARKS[0];
+  const pro2 = pro;
   const userScores: Record<string, number> = {};
   (data?.scores || []).forEach((s) => {
     userScores[s.key] = s.value;
@@ -81,7 +123,7 @@ export default function CompareScreen() {
     (k) => ({
       label: t(`score_${k}`),
       value: userScores[k],
-      compare: pro.scores[k],
+      compare: pro2.scores[k],
     })
   );
 
@@ -165,21 +207,35 @@ export default function CompareScreen() {
             <View style={[styles.splitTag, { backgroundColor: colors.success }]}>
               <Text style={styles.splitTagText}>{t(pro.name).toUpperCase()}</Text>
             </View>
-            <ImageBackground
-              source={{ uri: pro.image }}
-              style={[styles.splitVideo, styles.center]}
-              imageStyle={{ opacity: 0.5 }}
+            <View
+              style={styles.splitVideo}
+              onLayout={(e) =>
+                setProLayout({
+                  w: e.nativeEvent.layout.width,
+                  h: e.nativeEvent.layout.height,
+                })
+              }
             >
-              <LinearGradient
-                colors={["rgba(10,10,10,0.2)", "rgba(10,10,10,0.85)"]}
+              <VideoView
+                player={proPlayer}
                 style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                nativeControls={false}
               />
-              <Ionicons name="videocam-off-outline" size={26} color={colors.textSecondary} />
-              <Text style={styles.soonBig}>{t("coming_soon")}</Text>
-            </ImageBackground>
+              {proPose && proLayout.w > 0 && (
+                <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                  <PoseOverlay
+                    data={proPose}
+                    time={proTime}
+                    width={proLayout.w}
+                    height={proLayout.h}
+                  />
+                </View>
+              )}
+            </View>
           </View>
         </View>
-        <Text style={styles.footnote}>{t("footage_soon")}</Text>
+        <Text style={styles.footnote}>{t("ref_footage_note")}</Text>
 
         {/* Radar: you vs pro */}
         {radarAxes.length >= 3 && (
