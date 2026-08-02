@@ -5,17 +5,19 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Image,
+  ImageBackground,
   Platform,
   ScrollView,
   Dimensions,
   TextInput,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing } from "../src/theme";
 import {
   fetchMe,
@@ -25,9 +27,8 @@ import {
   appleLogin,
 } from "../src/api";
 
-// Hero: dramatic full-body action surfing photograph
-const HERO_IMAGE =
-  "https://images.unsplash.com/photo-1530870110042-98b2cb110834?w=1400&q=85&auto=format&fit=crop";
+// Hero: cinematic surfer at dusk
+const HERO_IMAGE = require("../assets/surf-login.png");
 
 const SCREEN_H = Dimensions.get("window").height;
 
@@ -36,12 +37,20 @@ export default function LoginScreen() {
   const [checking, setChecking] = useState(true);
   const [loggingIn, setLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showEmailForm, setShowEmailForm] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [emailBusy, setEmailBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+
+  const onForgotPassword = () => {
+    Alert.alert(
+      "Reset password",
+      "Email us at surfcoach23@gmail.com from your account address and we'll help you reset your password right away.",
+      [{ text: "OK" }]
+    );
+  };
 
   useEffect(() => {
     if (Platform.OS === "ios") {
@@ -170,41 +179,36 @@ export default function LoginScreen() {
       testID="login-screen"
       showsVerticalScrollIndicator={false}
     >
-      {/* ===== HERO ===== */}
-      <View style={styles.hero}>
-        <Image source={{ uri: HERO_IMAGE }} style={styles.heroImg} />
-        <View style={styles.heroOverlay} />
+      {/* ===== HERO / LOGIN ===== */}
+      <ImageBackground source={HERO_IMAGE} style={styles.hero} imageStyle={styles.heroImg}>
+        <LinearGradient
+          colors={[
+            "rgba(6,12,20,0.72)",
+            "rgba(6,12,20,0.35)",
+            "rgba(6,12,20,0.55)",
+            "#060C14",
+          ]}
+          locations={[0, 0.28, 0.6, 1]}
+          style={StyleSheet.absoluteFill}
+        />
 
         <View style={styles.heroContent}>
+          {/* Brand */}
           <View style={styles.brandRow}>
-            <View style={styles.brandDot} />
-            <Text style={styles.brandLabel}>SURFCOACH · 23</Text>
+            <Text style={styles.brandName}>
+              SURF<Text style={{ color: colors.primary }}>COACH</Text>23
+            </Text>
+            <Text style={styles.brandTag}>THE AI SURF COACH</Text>
           </View>
 
-          <Text style={styles.title} testID="login-title">
-            MASTER{"\n"}EVERY{"\n"}WAVE.
+          {/* Greeting */}
+          <Text style={styles.greeting} testID="login-title">
+            Aloha 🤙
           </Text>
-          <Text style={styles.subtitle}>
-            Upload a clip. Get instant pro-tour technique analysis — score,
-            mistakes, corrections and drills, frame by frame.
+          <Text style={styles.greetingSub}>
+            Ready for the next{" "}
+            <Text style={{ color: colors.primary, fontStyle: "italic" }}>wave?</Text>
           </Text>
-
-          <View style={styles.statsRow}>
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>AI</Text>
-              <Text style={styles.statLabel}>Coach</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>4K</Text>
-              <Text style={styles.statLabel}>Video</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>30s</Text>
-              <Text style={styles.statLabel}>Insights</Text>
-            </View>
-          </View>
 
           {error ? (
             <Text style={styles.error} testID="login-error">
@@ -212,60 +216,10 @@ export default function LoginScreen() {
             </Text>
           ) : null}
 
-          <TouchableOpacity
-            style={styles.signInBtn}
-            onPress={onSignIn}
-            activeOpacity={0.85}
-            disabled={loggingIn}
-            testID="login-google-btn"
-          >
-            {loggingIn ? (
-              <ActivityIndicator color="#000" />
-            ) : (
-              <>
-                <Ionicons
-                  name="logo-google"
-                  size={18}
-                  color="#000"
-                  style={{ marginRight: 10 }}
-                />
-                <Text style={styles.signInText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          {appleAvailable && (
-            <AppleAuthentication.AppleAuthenticationButton
-              buttonType={
-                AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
-              }
-              buttonStyle={
-                AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-              }
-              cornerRadius={10}
-              style={styles.appleBtn}
-              onPress={onAppleSignIn}
-            />
-          )}
-
-          {!showEmailForm ? (
-            <TouchableOpacity
-              style={styles.emailToggleBtn}
-              onPress={() => setShowEmailForm(true)}
-              testID="show-email-login-btn"
-            >
-              <Ionicons
-                name="mail-outline"
-                size={16}
-                color={colors.textMuted}
-                style={{ marginRight: 8 }}
-              />
-              <Text style={styles.emailToggleText}>
-                Continue with Email
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.emailForm}>
+          {/* Glass login card */}
+          <View style={styles.card}>
+            <View style={styles.inputRow}>
+              <Ionicons name="mail-outline" size={18} color={colors.textMuted} />
               <TextInput
                 style={styles.input}
                 placeholder="Email"
@@ -277,47 +231,116 @@ export default function LoginScreen() {
                 onChangeText={setEmail}
                 testID="email-input"
               />
+            </View>
+
+            <View style={styles.inputRow}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
               <TextInput
                 style={styles.input}
-                placeholder="Password (min 8 characters)"
+                placeholder="Password"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
                 testID="password-input"
               />
               <TouchableOpacity
-                style={styles.emailSubmitBtn}
-                onPress={onEmailSubmit}
-                disabled={emailBusy}
-                testID="email-submit-btn"
+                onPress={() => setShowPassword((s) => !s)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                {emailBusy ? (
-                  <ActivityIndicator color="#000" />
-                ) : (
-                  <Text style={styles.signInText}>
-                    {isRegister ? "Create Account" : "Log In"}
-                  </Text>
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setIsRegister(!isRegister)}
-                testID="toggle-register-btn"
-              >
-                <Text style={styles.emailToggleText}>
-                  {isRegister
-                    ? "Already have an account? Log in"
-                    : "New here? Create an account"}
-                </Text>
+                <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={18}
+                  color={colors.textMuted}
+                />
               </TouchableOpacity>
             </View>
-          )}
 
-          <Text style={styles.legal}>
-            Your video clips stay private to your account.
-          </Text>
+            {!isRegister && (
+              <TouchableOpacity onPress={onForgotPassword} style={styles.forgotBtn}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={onEmailSubmit}
+              disabled={emailBusy}
+              testID="email-submit-btn"
+              style={{ marginTop: isRegister ? spacing.md : 4 }}
+            >
+              <LinearGradient
+                colors={["#4FE3F0", "#0091AD"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.continueBtn}
+              >
+                {emailBusy ? (
+                  <ActivityIndicator color="#00131a" />
+                ) : (
+                  <Text style={styles.continueText}>
+                    {isRegister ? "Create Account" : "Continue"}
+                  </Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.orRow}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.orLine} />
+            </View>
+
+            <TouchableOpacity
+              style={styles.socialBtn}
+              onPress={onSignIn}
+              activeOpacity={0.85}
+              disabled={loggingIn}
+              testID="login-google-btn"
+            >
+              {loggingIn ? (
+                <ActivityIndicator color="#000" />
+              ) : (
+                <>
+                  <Ionicons name="logo-google" size={18} color="#000" style={{ marginRight: 10 }} />
+                  <Text style={styles.socialText}>Continue with Google</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {appleAvailable && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={14}
+                style={styles.appleBtn}
+                onPress={onAppleSignIn}
+              />
+            )}
+          </View>
+
+          {/* Feature icons */}
+          <View style={styles.featuresRow}>
+            <Feature icon="hardware-chip-outline" title="AI Analysis" sub="Advanced tech" />
+            <Feature icon="trending-up-outline" title="Real Progress" sub="Improve every session" />
+            <Feature icon="shield-checkmark-outline" title="Private & Safe" sub="Your data is secure" />
+          </View>
+
+          <TouchableOpacity
+            onPress={() => setIsRegister((r) => !r)}
+            style={styles.registerRow}
+            testID="toggle-register-btn"
+          >
+            <Text style={styles.registerText}>
+              {isRegister ? "Already have an account? " : "Don't have an account? "}
+              <Text style={{ color: colors.primary, fontWeight: "800" }}>
+                {isRegister ? "Log in" : "Register"}
+              </Text>
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
+      </ImageBackground>
 
       {/* ===== HOW IT WORKS ===== */}
       <View style={styles.section}>
@@ -529,7 +552,7 @@ export default function LoginScreen() {
                 color="#000"
                 style={{ marginRight: 10 }}
               />
-              <Text style={styles.signInText}>Continue with Google</Text>
+              <Text style={styles.socialText}>Continue with Google</Text>
             </>
           )}
         </TouchableOpacity>
@@ -583,153 +606,156 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
+function Feature({
+  icon,
+  title,
+  sub,
+}: {
+  icon: any;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <View style={styles.feature}>
+      <View style={styles.featureIcon}>
+        <Ionicons name={icon} size={22} color={colors.primary} />
+      </View>
+      <Text style={styles.featureTitle}>{title}</Text>
+      <Text style={styles.featureSub}>{sub}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { alignItems: "center", justifyContent: "center" },
 
-  // ===== HERO =====
+  // ===== HERO / LOGIN =====
   hero: {
-    minHeight: SCREEN_H > 700 ? SCREEN_H : 700,
-    backgroundColor: colors.background,
+    minHeight: SCREEN_H > 700 ? SCREEN_H : 760,
+    backgroundColor: "#060C14",
+    justifyContent: "center",
   },
-  heroImg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: "70%",
-    resizeMode: "cover",
-    opacity: 0.85,
-  },
-  heroOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(10,10,10,0.55)",
-  },
+  heroImg: { resizeMode: "cover" },
   heroContent: {
-    flex: 1,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xxl + spacing.lg,
     paddingBottom: spacing.xl,
-    justifyContent: "flex-end",
   },
-  brandRow: {
-    position: "absolute",
-    top: spacing.xxl + spacing.md,
-    left: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  brandDot: { width: 10, height: 10, backgroundColor: colors.primary },
-  brandLabel: {
-    color: colors.primary,
-    letterSpacing: 4,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  title: {
+  brandRow: { alignItems: "center", marginBottom: spacing.xl },
+  brandName: {
     color: colors.textPrimary,
-    fontSize: 56,
-    lineHeight: 56,
+    fontSize: 32,
     fontWeight: "900",
-    letterSpacing: -2,
-    textTransform: "uppercase",
-    marginBottom: spacing.md,
-  },
-  subtitle: {
-    color: colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: spacing.lg,
-    maxWidth: 360,
-  },
-  statsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.lg,
-  },
-  statBox: { flex: 1, alignItems: "flex-start" },
-  statDivider: { width: 1, height: 28, backgroundColor: colors.border },
-  statValue: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: "900",
-    letterSpacing: -1,
-  },
-  statLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
     letterSpacing: 2,
-    textTransform: "uppercase",
+  },
+  brandTag: {
+    color: colors.textSecondary,
+    fontSize: 9,
+    letterSpacing: 4,
+    fontWeight: "800",
     marginTop: 2,
   },
-  signInBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 16,
-    borderRadius: 4,
-    alignItems: "center",
-    justifyContent: "center",
+  greeting: {
+    color: colors.textPrimary,
+    fontSize: 46,
+    fontWeight: "900",
+    letterSpacing: -1.5,
+  },
+  greetingSub: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    fontStyle: "italic",
+    marginTop: 2,
+    marginBottom: spacing.lg,
+  },
+  card: {
+    backgroundColor: "rgba(10,18,28,0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(120,190,220,0.18)",
+    borderRadius: 24,
+    padding: spacing.lg,
+  },
+  inputRow: {
     flexDirection: "row",
-  },
-  signInText: {
-    color: "#000",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  appleBtn: {
-    height: 50,
-    marginTop: spacing.sm,
-  },
-  emailToggleBtn: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    marginTop: spacing.sm,
-    minHeight: 44,
-  },
-  emailToggleText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    textAlign: "center",
-    paddingVertical: 8,
-  },
-  emailForm: {
-    marginTop: spacing.sm,
-  },
-  input: {
+    gap: 10,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 4,
-    color: "#fff",
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    fontSize: 15,
+    borderColor: "rgba(255,255,255,0.10)",
+    borderRadius: 16,
+    paddingHorizontal: 16,
     marginBottom: spacing.sm,
   },
-  emailSubmitBtn: {
-    backgroundColor: colors.primary,
-    paddingVertical: 15,
-    borderRadius: 4,
+  input: {
+    flex: 1,
+    color: "#fff",
+    paddingVertical: 16,
+    fontSize: 16,
+  },
+  forgotBtn: { alignSelf: "flex-end", paddingVertical: 8, marginBottom: 2 },
+  forgotText: { color: colors.primary, fontSize: 14, fontWeight: "700" },
+  continueBtn: {
+    paddingVertical: 17,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
-  legal: {
+  continueText: {
+    color: "#00131a",
+    fontSize: 17,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+  orRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: spacing.md,
+  },
+  orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: "rgba(255,255,255,0.18)" },
+  orText: { color: colors.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  socialBtn: {
+    backgroundColor: "#fff",
+    paddingVertical: 15,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+  },
+  socialText: { color: "#000", fontSize: 15, fontWeight: "800" },
+  appleBtn: { height: 50, marginTop: spacing.sm },
+  featuresRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: spacing.xl,
+  },
+  feature: { flex: 1, alignItems: "center", paddingHorizontal: 4 },
+  featureIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: "rgba(79,227,240,0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(79,227,240,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  featureTitle: {
+    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  featureSub: {
     color: colors.textMuted,
     fontSize: 11,
     textAlign: "center",
-    marginTop: spacing.md,
+    marginTop: 2,
   },
+  registerRow: { alignItems: "center", marginTop: spacing.xl },
+  registerText: { color: colors.textSecondary, fontSize: 15 },
   error: { color: colors.error, marginBottom: spacing.sm, fontSize: 13 },
 
   // ===== SECTIONS =====
