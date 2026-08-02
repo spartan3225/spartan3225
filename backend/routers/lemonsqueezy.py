@@ -48,7 +48,7 @@ LS_VARIANTS = {
 LS_ADDONS = {
     "multi": {
         "name": "Multi-Video Analysis",
-        "amount": 9.0,
+        "amount": 9.99,
         "currency": "usd",
     },
 }
@@ -235,8 +235,12 @@ def attach(app_router: APIRouter, db, get_current_user, paid_tiers_setter):
                 "user_id": user.user_id,
                 "email": user.email,
                 "plan_id": req.plan_id,
-                "amount": float(LS_PLANS[req.plan_id]["amount"]),
-                "currency": LS_PLANS[req.plan_id]["currency"],
+                "amount": float(
+                    (LS_PLANS.get(req.plan_id) or LS_ADDONS[req.plan_id])["amount"]
+                ),
+                "currency": (
+                    LS_PLANS.get(req.plan_id) or LS_ADDONS[req.plan_id]
+                )["currency"],
                 "test_mode": LS_TEST_MODE,
                 "status": "open",
                 "payment_status": "initiated",

@@ -171,12 +171,12 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - FRIEND COUPON: created live via LS API — code **SURFFRIEND100** (100% off, forever, max 1 redemption). Share with friend at checkout.
 - TRAIN VIDEO TUTORIALS: 6 curated YouTube embeds (TUTORIALS in src/trainLibrary.ts), horizontal cards in Train tab, modal player via src/components/YouTubeEmbed.tsx (iframe on web, react-native-webview on native).
 - MULTI-VIDEO PAID ADD-ON (one-time payment per multi-analysis, user's choice):
-  - Backend: users.multi_credits; LS one-time product plan_id "multi" → env LEMONSQUEEZY_VARIANT_MULTI (EMPTY — WAITING FOR USER to create the product in LemonSqueezy dashboard and give variant ID + price; checkout returns 400 until then). Webhook order_created grants +1 credit idempotently (db.applied_orders by LS order id).
+  - Backend: users.multi_credits; LS one-time product plan_id "multi" → env LEMONSQUEEZY_VARIANT_MULTI=1975057 (LIVE product "Multi-Video Analysis (3 clips)", $9.99, product id 1263238, test_mode=False — WIRED & VERIFIED June 2026; checkout returns live URL). Webhook order_created grants +1 credit idempotently (db.applied_orders by LS order id). Fixed KeyError: checkout txn insert now falls back to LS_ADDONS for non-subscription plans.
   - POST /api/analyses/finalize-multi: 2-3 chunk-uploaded clips → atomic credit consume (402 if none, refund on assembly/AI failure), ONE combined analysis (video_count, video_paths, is_multi), does NOT touch daily quota. Combined Gemini prompt (extra_files param on analyse_video_with_gemini; timestamps refer to clip 1). GridFS per clip as {analysis_id}_{i}. Video endpoint supports ?index=0|1|2 (clamped). Pose runs on clip 1 only. Shared _apply_ai_result() used by single+multi runners.
   - Frontend: upload.tsx Single/Multi toggle, credits pill, add/remove up to 3 clips, buy button (web/Android; iOS shows 'purchase on website' note — Apple Netflix model), api.uploadChunksForFile + finalizeMultiUpload. Analysis page clip selector chips (skeleton overlay only on clip 0).
   - E2E validated with REAL AI run: ana_cf496d925cac4b (2 clips, ready, score 63, 14 scores). testing_agent iteration_20: 15/15 backend + full frontend green. Orphan chunks on 402 auto-expire via existing 24h TTL index (non-issue).
 - Google Play: still BLOCKED on Google identity verification (user confirmed still waiting).
-- PENDING FROM USER: LemonSqueezy multi product variant ID (+ chosen price) → put in backend/.env LEMONSQUEEZY_VARIANT_MULTI and restart.
+- DONE: LemonSqueezy multi product wired (variant 1975057, $9.99 LIVE). Checkout endpoint verified returning live hosted checkout URL.
 
 ## iOS readiness fixes (Aug 2026)
 - Ran expo-appstore-readiness-review skill. Fixed the blocker + warnings:
