@@ -64,6 +64,19 @@ export default function UploadScreen() {
     if (Platform.OS !== "web") Alert.alert("Error", m);
   };
 
+  // Reject clips that are too large before we even try to upload — this is a
+  // common cause of "upload error" on 4K iPhone footage. 200 MB limit.
+  const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
+  const tooLarge = (a: { fileSize?: number | null }): boolean => {
+    if (a.fileSize && a.fileSize > MAX_UPLOAD_BYTES) {
+      showError(
+        "This clip is too large (over 200 MB). Please trim it shorter, or in your phone camera settings record in 1080p (not 4K)."
+      );
+      return true;
+    }
+    return false;
+  };
+
   const pickFromGallery = async () => {
     setError(null);
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -84,6 +97,7 @@ export default function UploadScreen() {
         mimeType: a.mimeType || "video/mp4",
         fileSize: a.fileSize,
       };
+      if (tooLarge(picked)) return;
       if (mode === "multi") {
         setMultiAssets((prev) => (prev.length >= 3 ? prev : [...prev, picked]));
       } else {
@@ -112,6 +126,7 @@ export default function UploadScreen() {
         mimeType: a.mimeType || "video/mp4",
         fileSize: a.fileSize,
       };
+      if (tooLarge(picked)) return;
       if (mode === "multi") {
         setMultiAssets((prev) => (prev.length >= 3 ? prev : [...prev, picked]));
       } else {
@@ -433,6 +448,7 @@ export default function UploadScreen() {
           <Text style={styles.tip}>• {t("tip2")}</Text>
           <Text style={styles.tip}>• {t("tip3")}</Text>
           <Text style={styles.tip}>• {t("tip4")}</Text>
+          <Text style={styles.tip}>• {t("tip5")}</Text>
         </View>
       </ScrollView>
     </SafeAreaView>

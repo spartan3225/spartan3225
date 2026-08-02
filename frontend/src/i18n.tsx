@@ -209,6 +209,7 @@ const en: Record<string, string> = {
   tip2: "Surfer fills 30%+ of frame",
   tip3: "Capture pop-up to top-turn",
   tip4: "Keep clip under 60 seconds",
+  tip5: "MP4 or MOV format, under 200 MB (record in 1080p, not 4K)",
   // Profile
   language: "Language",
   language_note: "AI feedback and the app will use this language.",

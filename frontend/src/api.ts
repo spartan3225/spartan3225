@@ -191,19 +191,19 @@ export async function getAnalysis(id: string): Promise<Analysis> {
 }
 
 export async function logout(): Promise<void> {
-  // Clear the local token FIRST so the user is logged out even if the
-  // network call fails or the device is offline.
+  // Clear the local token FIRST so the user is logged out instantly, even if
+  // the network call is slow, fails, or the device is offline.
   const token = await getToken();
   await clearToken();
+  // Fire-and-forget the server-side session revoke — do NOT await it. Awaiting
+  // a hanging request on a flaky mobile network made "Log out" appear frozen.
   if (token) {
-    try {
-      await fetch(`${API_URL}/auth/logout`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      // ignore
-    }
+    fetch(`${API_URL}/auth/logout`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {
+      // ignore — token is already cleared locally
+    });
   }
 }
 
