@@ -101,174 +101,146 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
-
 user_problem_statement: |
-  SurfCoach23 backend tier system update — verify expanded plan tier list
-  (free lifetime / beginner / plus / intermediate / advanced / pro / coach)
-  including /api/plans, /api/analyses/quota, /api/payments/checkout,
-  /api/analyses lifetime cap (must return 402), and
-  _apply_subscription_if_paid() webhook tier mapping for new tier names.
+  SurfCoach23 / KAI — High-priority reliability + redesign update:
+  (1) Home screen redesign to premium "KAI" design (hero coach image, greeting,
+      Kai message + KAI SCORE ring, stats row, ANALYZE SESSION CTA, recent
+      sessions horizontal scroll, TECHNIQUE bars, ACHIEVEMENTS badges, quote).
+  (2) CRITICAL: video upload + AI analysis must be reliable on first attempt.
+  (3) CRITICAL: analysis persistence — uploaded video must NEVER disappear;
+      user can reopen past analyses and replay video permanently.
+  (4) Skeleton tracking reliability (retry, no random failures).
+  (5) Pro Reference library (legal generic archetypes, no named pros).
 
 backend:
-  - task: "GET /api/plans returns 7 tiers in correct order/amounts/limits"
+  - task: "Persistence-first: store uploaded video to GridFS synchronously at finalize (single + multi) before any AI/conversion"
     implemented: true
     working: true
     file: "/app/backend/server.py"
     stuck_count: 0
     priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: |
+          Added await _store_video_in_gridfs() call in _finalize_and_start_analysis
+          and in finalize_multi_upload BEFORE asyncio.create_task. Verified via
+          curl+DB: GridFS entry exists immediately at status=processing; video
+          streams (200) even AFTER deleting the local file (simulated pod restart).
+  - task: "Gemini analysis retry-with-backoff on transient errors (429/5xx/timeout)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "3-attempt exponential backoff inside per-model loop in analyse_video_with_gemini. E2E upload produced status=ready."
+  - task: "ffmpeg resolver fallback to bundled imageio-ffmpeg (iPhone .MOV conversion never breaks)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "System ffmpeg missing in this env; _resolve_ffmpeg() falls back to imageio_ffmpeg binary. Verified .mov->mp4 conversion works with bundled binary."
+  - task: "Pose extraction retry-once + never blocks ready status"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        -working: true
+        -agent: "main"
+        -comment: "Retry loop added; pose failure sets pose_status=failed without affecting analysis 'ready'."
+  - task: "LemonSqueezy multi-video checkout wired (variant 1975057, $9.99) + KeyError fix"
+    implemented: true
+    working: true
+    file: "/app/backend/routers/lemonsqueezy.py"
+    stuck_count: 0
+    priority: "high"
     needs_retesting: false
     status_history:
         -working: true
-        -agent: "testing"
-        -comment: |
-          Verified. Returns 7 plans in order [free, beginner, plus,
-          intermediate, advanced, pro, coach] with amounts
-          [0, 5, 12, 20, 35, 60, 120] and daily_limit
-          [1, 1, 3, 6, 10, 15, -1]. is_lifetime=true ONLY on free.
-          free_lifetime_limit=1 present. (legacy free_daily_limit=1 also
-          present for old clients — fine.)
+        -agent: "main"
+        -comment: "checkout returns live LS URL for plan_id=multi; txn insert falls back to LS_ADDONS."
 
-  - task: "GET /api/analyses/quota — is_lifetime flag for free vs paid"
+frontend:
+  - task: "Home screen KAI redesign (hero, message+score ring, stats, CTA, recent clips, technique bars, achievements, quote)"
     implemented: true
-    working: true
-    file: "/app/backend/server.py"
+    working: "NA"
+    file: "/app/frontend/app/(tabs)/index.tsx"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
-        -working: true
-        -agent: "testing"
-        -comment: |
-          Verified using seeded demo creds.
-          • Free user (demo_token_active): is_lifetime=true, tier=free, limit=1.
-            Count is lifetime-total: after seeding 1 prior analysis,
-            used_today=1, remaining=0; after wipe, used_today=0, remaining=1.
-          • Coach user (demo_coach_token): is_lifetime=false, tier=coach,
-            limit=-1 (unlimited), used_today=0.
-
-  - task: "POST /api/payments/checkout for new tiers + invalid plan rejection"
+        -working: "NA"
+        -agent: "main"
+        -comment: "Full rewrite. Smoke-tested on web (empty state) — renders correctly with hero image, greeting, ring, stats, CTA, tabs (Home/Kai Review/Progress/Train/Profile). Needs test WITH real sessions to verify technique bars/achievements/recent clips + navigation."
+  - task: "Upload client retry on single-shot POST /analyses and /analyses/finalize"
     implemented: true
-    working: true
-    file: "/app/backend/server.py"
+    working: "NA"
+    file: "/app/frontend/src/api.ts"
     stuck_count: 0
     priority: "high"
-    needs_retesting: false
+    needs_retesting: true
     status_history:
-        -working: true
-        -agent: "testing"
-        -comment: |
-          All 4 new tiers (beginner, intermediate, advanced, pro) plus plus &
-          coach return 200 with a real Stripe URL
-          (https://checkout.stripe.com/c/pay/cs_test_*) and persist a
-          payment_transactions record. plan_id="invalid_plan" returns 400
-          with detail "Invalid plan" as expected.
-
-  - task: "POST /api/analyses lifetime cap (CRITICAL — must return 402)"
+        -working: "NA"
+        -agent: "main"
+        -comment: "postFormWithRetry now wraps single-shot uploads; finalize retries 3x on 5xx/429."
+  - task: "Pro Reference library relabel (compare screen uses t(pro.name))"
     implemented: true
-    working: true
-    file: "/app/backend/server.py"
+    working: "NA"
+    file: "/app/frontend/src/proBenchmarks.ts, /app/frontend/app/compare/[id].tsx"
     stuck_count: 0
-    priority: "high"
-    needs_retesting: false
+    priority: "low"
+    needs_retesting: true
     status_history:
-        -working: true
-        -agent: "testing"
-        -comment: |
-          CRITICAL behaviour confirmed.
-          • Free user with 1 prior analysis seeded → POST /api/analyses returns
-            402 with detail "Free plan allows only 1 analysis ever. Upgrade to
-            a paid plan to keep analysing." (NOT 422 / NOT 500). 
-          • Free user with 0 prior analyses → request passes the lifetime
-            check and proceeds to the Gemini call (returns 500 only because
-            we sent dummy mp4 bytes — proves the cap permitted the request).
-          Minor: spec asked the message contain the literal word "lifetime";
-          current message says "ever" instead. Behaviour is correct, only the
-          word "lifetime" is missing in the user-facing string. Optional polish
-          for the main agent: include "lifetime" in the 402 detail at
-          server.py:594.
-
-  - task: "_apply_subscription_if_paid assigns new tier names (beginner/intermediate/advanced/pro)"
-    implemented: true
-    working: true
-    file: "/app/backend/server.py"
-    stuck_count: 0
-    priority: "high"
-    needs_retesting: false
-    status_history:
-        -working: true
-        -agent: "testing"
-        -comment: |
-          Verified by seeding payment_transactions docs with each new plan_id
-          and invoking server._apply_subscription_if_paid(session_id,
-          event_paid=True) directly.
-          For plan_id ∈ {beginner, intermediate, advanced, pro}, the user
-          tier was correctly set to the matching plan_id, subscription_status
-          set to "active", and subscription_expires_at populated ~30 days
-          ahead. apply_result reports applied=True, payment_status="paid",
-          status="complete". The same logic flow as plus/coach — no special
-          casing missing for new tiers.
+        -working: "NA"
+        -agent: "main"
+        -comment: "Generic archetypes (Power/Progressive/Flow/Technical); names resolved via i18n."
 
 metadata:
-  created_by: "testing_agent"
-  version: "1.0"
+  created_by: "main_agent"
+  version: "2.0"
   test_sequence: 1
   run_ui: false
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Persistence-first GridFS store (single + multi)"
+    - "Upload + AI analysis reliability first-attempt (single-shot + chunked)"
+    - "Reopen past analysis and replay video (video streams from GridFS)"
+    - "Home screen KAI redesign renders with real session data + navigation"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
-    -agent: "testing"
+    -agent: "main"
     -message: |
-      [2026-06-19] Post-Stripe-cleanup regression sweep
-      (see /app/regression_test.py).
-      All 13 assertions PASS against
-      https://wave-motion-ai.preview.emergentagent.com/api:
-        1. GET /api/health → 200.
-        2. GET /api/plans → exactly 4 plans
-           [free, learn, advanced, pro]; paid tiers all SAR
-           (free is usd@0.0, which is fine — no charge).
-        3. POST /api/payments/checkout → 410 Gone with the
-           "This payment endpoint is no longer supported" detail.
-        4. POST /api/payments/lemonsqueezy/checkout:
-             • learn/advanced/pro → 200 + real
-               surfcoach23.lemonsqueezy.com/checkout/... URL.
-             • bogus plan_id → 400 "Invalid plan".
-        5. GET /api/analyses/quota:
-             • demo free user → is_lifetime=True (tier=free, limit=1).
-             • demo coach user → is_lifetime=False (tier=coach, limit=-1).
-        6. POST /api/payments/cancel-renewal:
-             • free user → 400 "No active subscription".
-             • demo user temporarily promoted to tier='learn' →
-               200 with cancel_at_period_end=true. Restored to free
-               after test. Confirms PAID_TIERS now includes learn /
-               advanced / pro / coach (not just coach).
-      Demo sessions had expired (>7d) from the prior run; re-seeded
-      via the snippet in /app/memory/test_credentials.md before
-      executing. No regressions detected. Backend ready.
-    -agent: "testing"
-    -message: |
-      Ran /app/backend_test.py against
-      https://wave-motion-ai.preview.emergentagent.com/api.
-      49 of 50 assertions passed; the only failing assertion is a
-      cosmetic check that the 402 detail string contains the literal word
-      "lifetime" (it currently says "1 analysis ever"). All 5 review-request
-      items behave correctly:
-        1. /plans → 7 tiers, correct order/amounts/limits, is_lifetime true
-           only on free, free_lifetime_limit=1.
-        2. /analyses/quota → is_lifetime true for free (lifetime total),
-           false for coach (-1 limit).
-        3. /payments/checkout → 200 + real Stripe URL for beginner,
-           intermediate, advanced, pro (and plus/coach); invalid_plan→400.
-        4. /analyses lifetime cap → 402 when free user has 1 prior, request
-           proceeds when 0 prior.
-        5. _apply_subscription_if_paid → correctly maps beginner /
-           intermediate / advanced / pro to user.tier and sets a 30-day
-           subscription_expires_at.
-      Tests cleaned up after themselves: demo user reset to free, seeded
-      analyses removed, fake payment_transactions removed.
-      Optional polish for main agent: include the word "lifetime" in the
-      402 detail string at server.py line 594 to match the spec wording.
+      Please test BACKEND reliability first (highest priority):
+      1) Upload a small MP4 via POST /api/analyses (multipart) AND via chunked
+         flow (/api/uploads/chunk + /api/analyses/finalize). Both should return
+         200 and eventually status=ready.
+      2) Immediately after upload (while processing), GET
+         /api/analyses/{id}/video?token=... should already return 200 (video was
+         stored to GridFS synchronously at finalize).
+      3) Persistence: confirm the video still streams after processing completes
+         (reopen scenario). GridFS is the source of truth.
+      Then test FRONTEND: new Home screen (/(tabs)) renders hero+greeting+KAI
+      SCORE ring+stats+CTA; tapping ANALYZE SESSION -> upload; recent session
+      cards navigate to /analysis/{id}; technique bars + achievements show.
+      AUTH for web testing: set localStorage 'session_token' = a valid session.
+      Test accounts (see /app/memory/test_credentials.md): demo_token_active
+      (free, may be quota-capped), demo_coach_token (coach tier). For upload
+      tests that need quota, use demo_coach_token. Backend base for curl:
+      https://wave-motion-ai.preview.emergentagent.com/api

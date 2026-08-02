@@ -133,7 +133,7 @@ export default function CompareScreen() {
               <Text
                 style={[styles.proChipText, proId === p.id && { color: "#000" }]}
               >
-                {p.country} {p.name}
+                {p.country} {t(p.name)}
               </Text>
               {!p.available && (
                 <Text style={styles.soonText}>{t("coming_soon")}</Text>
@@ -163,7 +163,7 @@ export default function CompareScreen() {
           </View>
           <View style={styles.splitCell}>
             <View style={[styles.splitTag, { backgroundColor: colors.success }]}>
-              <Text style={styles.splitTagText}>{pro.name.toUpperCase()}</Text>
+              <Text style={styles.splitTagText}>{t(pro.name).toUpperCase()}</Text>
             </View>
             <ImageBackground
               source={{ uri: pro.image }}
@@ -191,7 +191,7 @@ export default function CompareScreen() {
               </View>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: colors.success }]} />
-                <Text style={styles.legendText}>{pro.name}</Text>
+                <Text style={styles.legendText}>{t(pro.name)}</Text>
               </View>
             </View>
             <RadarChart axes={radarAxes} />

@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 21 — KAI Home rebrand + persistence-first upload/AI reliability verified END-TO-END. Backend: 6/6 pytest cases pass in /app/backend/tests/test_iter21_persistence_reliability.py (~155s). (1) Direct multipart POST /api/analyses with a tiny H.264 MP4 (built via bundled imageio-ffmpeg) returns 200 in <500ms with status=processing; polls to status=ready inside ~120s with a scores[] list populated. (2) Chunked upload — POST /api/uploads/chunk (512KB chunks, upload_id=uuid.hex) then POST /api/analyses/finalize {upload_id,filename,mime_type,total_chunks} — returns 200 with status=processing and reaches ready. (3) PERSISTENCE-FIRST confirmed: immediately after finalize (0.5s later, while status=processing), GET /api/analyses/{id}/video?token=demo_coach_token streams 200 with Content-Type=video/mp4 (video is in GridFS synchronously at finalize BEFORE background AI starts). Same video still streams 200 after status=ready. (4) LemonSqueezy POST /api/payments/lemonsqueezy/checkout {plan_id:'multi', origin_url:BASE_URL} returns 200 with a lemonsqueezy.com URL; regression {plan_id:'learn'} still 200. (5) auth/me for demo_coach_token returns tier=coach as expected. Frontend (mobile 390x844, demo_coach_token in localStorage): the new KAI Home renders correctly — 'KAI' brand + 'THE AI SURF COACH' tagline, bell icon, hero coach image, greeting 'Hey, Demo 🤙', 'Ready for the next wave?', Kai message card with 'Solid work in the water...', KAI SCORE ring, stats row (SESSIONS=10 / KAI SCORE=0.0 / IMPROVEMENT=+0), ANALYZE SESSION gradient CTA, 8 recent-session cards in horizontal scroll (data-testid=analysis-card-*), TECHNIQUE panel with 5 progress bars, ACHIEVEMENTS with 4 badges, quote card. Bottom tabs labels are exactly 'Home / Kai Review / Progress / Train / Profile'. Tapping ANALYZE SESSION navigates to /upload (upload-screen). Tapping a recent card navigates to /analysis/{id} (analysis-detail-screen mounts). Compare screen at /compare/{id} shows the 4 generic pro chips ('Power Surfing', 'Progressive / Air', 'Flow & Style', 'Technical Precision') — ZERO named-pro leakage (Kelly Slater/John John/Medina/Toledo/Ferreira all absent). All 7 KAI home content checks + navigation checks pass. Console noise = pre-existing react-native-web deprecations only (Image.style.resizeMode, props.pointerEvents, Animated useNativeDriver) — no new errors. Observation: GET /api/analyses/{id}/video occasionally responds 15–30s or 502 while the background pose (Mediapipe) task is in-flight — event loop is blocked briefly on that pod. The persistence layer is correct; this is a latency issue in the CPU-bound worker. Test uses retry-with-backoff to prove the object is served correctly once the pod is free.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/analyses/{id}/video", "issue": "During background Mediapipe pose extraction the FastAPI event loop can be blocked for 15–30s, causing this endpoint to intermittently respond slowly or the ingress to return 502. Persistence itself is fine (GridFS write happens synchronously at finalize BEFORE the background task). Recommendation: move pose extraction to a run_in_executor / process pool so the event loop stays responsive for concurrent GETs. Verified via curl: video streamed 200 with 2140 bytes but took 22.6s while another analysis was mid-pose."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "react-native-web deprecations (carried from iter18/19/20)", "issue": "Console still emits 'Image: style.resizeMode is deprecated' + 'props.pointerEvents is deprecated' + 'Animated: useNativeDriver is not supported' on Home render. Not a new regression. Reference: /app/frontend/app/(tabs)/index.tsx:468 (heroImg style.resizeMode) and any Animated with useNativeDriver:true on web."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter21_persistence_reliability.py",
+    "/app/test_reports/pytest/iteration_21_persistence.xml"
+  ],
+  "action_items": [
+    "(optional / perf) In server.py, wrap the Mediapipe pose loop with asyncio.get_running_loop().run_in_executor(...) or a concurrent.futures.ProcessPoolExecutor so it does not block the FastAPI event loop while a user is streaming their video back. Currently a chunked-upload finalize immediately followed by /video GET can see 15–30s latency or transient 502.",
+    "(carry-over) Migrate ImageBackground/Image style.resizeMode -> props.resizeMode and gate Animated useNativeDriver:true behind Platform.OS !== 'web' (repeated for 4 iterations).",
+    "(carry-over) server.py has grown to 2443 lines — split into routers/{auth,uploads,analyses,coach,payments}.py."
+  ],
+  "critical_code_review_comments": [
+    "Persistence-first design in _finalize_and_start_analysis (server.py:1314) is correct: GridFS write happens synchronously BEFORE the background task is created, so a pod restart during Gemini call cannot lose the clip. Verified.",
+    "Chunked upload uses upload_chunks Mongo collection (server.py:1065) — good for multi-replica deploys where local disk is not shared.",
+    "_resolve_ffmpeg (server.py:1337) correctly falls back to imageio_ffmpeg.get_ffmpeg_exe() when system ffmpeg is absent — MOV conversion path is safe.",
+    "LemonSqueezy checkout requires origin_url (routers/lemonsqueezy.py:106). Frontend should always pass the current origin (window.location.origin on web / configured deep link on native) so payment-success URL is correct.",
+    "Home screen (frontend/app/(tabs)/index.tsx) uses real user + real analyses; kaiScore/best/improvement all derived from actual data. No mocks. Good.",
+    "proBenchmarks.ts uses fully generic archetype names + Unsplash stock images — legally clean for App/Play store. Confirmed no named-pro strings in the UI at /compare/{id}."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter21_persistence_reliability.py (new — 6 tests covering direct + chunked + persistence-first + LS multi)"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (all requested flows: KAI Home render, ANALYZE→upload nav, recent-card→/analysis/{id} nav, generic pro chips on /compare/{id})"},
+  "seed_data_creation": "None. Cleaned up 7 leftover analyses created by this iteration's uploads (5 red-frame test analyses + 2 TEST_iter21 that teardown_class already tried to delete). db.upload_chunks emptied for user_coach_67890. No production data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 21 persistence + KAI home regression suite lives in /app/backend/tests/test_iter21_persistence_reliability.py. Key testIDs verified stable: dashboard-screen, dashboard-new-analysis-btn, notifications-btn, analysis-card-{id}, upload-screen, analysis-detail-screen, compare-screen. Tab labels are Home / Kai Review / Progress / Train / Profile. Backend contract: POST /api/analyses returns AnalysisOut with status=processing in <500ms (fully async — background task does convert+Gemini+Claude+Mediapipe). POST /api/uploads/chunk expects (upload_id ^[a-f0-9]{16,64}$, chunk_index, total_chunks, file). POST /api/analyses/finalize {upload_id, filename, mime_type, total_chunks} → AnalysisOut. GET /api/analyses/{id}/video?token=<session_token> streams the raw upload from GridFS from the moment finalize returns. LemonSqueezy: POST /api/payments/lemonsqueezy/checkout REQUIRES {plan_id, origin_url} — 422 if origin_url missing. Watch out: /app/backend/tests is inside the uvicorn --reload watch path — editing test files triggers a mid-request backend reload which can make tests flake with ReadTimeout during the first run after any edit. Solution: sleep 6s after any test file edit or move tests out of /app/backend."
+}

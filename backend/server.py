@@ -783,8 +783,34 @@ async def analyse_video_with_gemini(
                 ),
                 file_contents=file_contents,
             )
-            response = await chat.send_message(msg)
-            raw = response if isinstance(response, str) else str(response)
+            # Retry transient gateway errors (429/500/503/timeout) up to 3x with
+            # exponential backoff. This is the #1 cause of "worked on the 2nd try".
+            raw = None
+            transient_err: Exception | None = None
+            for attempt in range(3):
+                try:
+                    response = await chat.send_message(msg)
+                    raw = response if isinstance(response, str) else str(response)
+                    transient_err = None
+                    break
+                except Exception as se:
+                    et = str(se)
+                    is_transient = any(
+                        code in et
+                        for code in ("429", "500", "502", "503", "504",
+                                     "overloaded", "Overloaded", "timeout",
+                                     "Timeout", "RESOURCE_EXHAUSTED",
+                                     "UNAVAILABLE", "rate limit", "Rate limit")
+                    )
+                    transient_err = se
+                    if not is_transient or attempt == 2:
+                        raise
+                    wait_s = 2 ** attempt + 1  # 2s, 3s, 5s
+                    logger.warning(
+                        "Gemini %s transient error (attempt %d/3): %s — retrying in %ss",
+                        model_name, attempt + 1, et[:160], wait_s,
+                    )
+                    await asyncio.sleep(wait_s)
             cleaned = _strip_json(raw)
             try:
                 draft = json.loads(cleaned)
@@ -1206,6 +1232,11 @@ async def finalize_multi_upload(
     }
     await db.analyses.insert_one(dict(doc))
 
+    # PERSISTENCE-FIRST: store every raw clip to GridFS synchronously before any
+    # conversion / AI work, so clips can never be lost on a restart/OOM.
+    for i, (p, _, _) in enumerate(files):
+        await _store_video_in_gridfs(f"{analysis_id}_{i}", p)
+
     asyncio.create_task(
         _run_multi_analysis_in_background(
             analysis_id=analysis_id,
@@ -1275,6 +1306,13 @@ async def _finalize_and_start_analysis(
             detail="Plan limit reached. Upgrade for more analyses.",
         )
 
+    # PERSISTENCE-FIRST: store the raw uploaded video to GridFS synchronously,
+    # BEFORE any conversion / AI / pose work. GridFS lives in MongoDB (shared,
+    # permanent) so the clip can NEVER be lost even if this pod restarts, runs
+    # out of memory during analysis, or the request lands on another replica
+    # later. Background conversion re-stores the mp4 version under the same name.
+    await _store_video_in_gridfs(analysis_id, save_path)
+
     # Kick off conversion + AI analysis in the background so this HTTP request
     # returns instantly (Cloudflare proxy times out at ~100s, and ffmpeg can be
     # slow on small deployment pods).
@@ -1296,6 +1334,24 @@ async def _finalize_and_start_analysis(
     )
 
 
+def _resolve_ffmpeg() -> Optional[str]:
+    """Return a usable ffmpeg executable path.
+
+    Prefer the system ffmpeg; if it isn't installed (some slim containers omit
+    it), fall back to the binary bundled with the `imageio-ffmpeg` package so
+    iPhone .MOV/HEVC conversion never silently breaks.
+    """
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
 async def _convert_to_mp4_if_needed(
     analysis_id: str, save_path: Path, ext: str, mime: str
 ) -> tuple[Path, str]:
@@ -1306,10 +1362,14 @@ async def _convert_to_mp4_if_needed(
     """
     if ext == "mp4":
         return save_path, mime
+    ffmpeg_bin = _resolve_ffmpeg()
+    if not ffmpeg_bin:
+        logger.warning("ffmpeg unavailable (system + bundled) — using original file")
+        return save_path, mime
     try:
         mp4_path = save_path.parent / f"{analysis_id}.mp4"
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
+            ffmpeg_bin,
             "-y",
             "-i",
             str(save_path),
@@ -1357,21 +1417,37 @@ async def _convert_to_mp4_if_needed(
     return save_path, mime
 
 
-async def _store_video_in_gridfs(analysis_id: str, path: Path) -> None:
+async def _store_video_in_gridfs(analysis_id: str, path: Path) -> bool:
     """Persist the video to GridFS so ANY replica can stream it later.
 
-    Local pod disk is not shared between deployment replicas.
+    Local pod disk is not shared between deployment replicas. Retries once on
+    failure. Returns True if the video is confirmed stored.
     """
-    try:
-        async for f in db["videos.files"].find({"filename": analysis_id}, {"_id": 1}):
-            try:
-                await gridfs_videos.delete(f["_id"])
-            except Exception:
-                pass
-        with path.open("rb") as fh:
-            await gridfs_videos.upload_from_stream(analysis_id, fh)
-    except Exception:
-        logger.exception("GridFS store failed for %s", analysis_id)
+    for attempt in range(2):
+        try:
+            if not path.exists() or path.stat().st_size == 0:
+                logger.warning("GridFS skip: file missing/empty %s", path)
+                return False
+            # Remove any prior copy under this name (idempotent re-store).
+            async for f in db["videos.files"].find({"filename": analysis_id}, {"_id": 1}):
+                try:
+                    await gridfs_videos.delete(f["_id"])
+                except Exception:
+                    pass
+            with path.open("rb") as fh:
+                await gridfs_videos.upload_from_stream(analysis_id, fh)
+            # Verify it landed.
+            exists = await db["videos.files"].find_one(
+                {"filename": analysis_id}, {"_id": 1}
+            )
+            if exists:
+                return True
+        except Exception:
+            logger.exception(
+                "GridFS store failed for %s (attempt %d/2)", analysis_id, attempt + 1
+            )
+        await asyncio.sleep(1)
+    return False
 
 
 async def _run_analysis_in_background(
@@ -1527,11 +1603,28 @@ async def _run_pose_extraction(analysis_id: str, save_path: Path) -> None:
         )
         from pose_tracker import extract_pose_data
 
-        data = await asyncio.wait_for(
-            asyncio.to_thread(extract_pose_data, str(save_path)), timeout=300
-        )
-        if not data.get("frames"):
-            raise RuntimeError("no pose frames detected")
+        # Retry once: MediaPipe can occasionally fail on the first pass
+        # (transient decode/memory hiccup) but succeed on a clean retry.
+        data = None
+        last_err: Exception | None = None
+        for attempt in range(2):
+            try:
+                data = await asyncio.wait_for(
+                    asyncio.to_thread(extract_pose_data, str(save_path)),
+                    timeout=300,
+                )
+                if data.get("frames"):
+                    break
+                last_err = RuntimeError("no pose frames detected")
+            except Exception as e:
+                last_err = e
+                logger.warning(
+                    "pose extraction attempt %d/2 failed for %s: %s",
+                    attempt + 1, analysis_id, str(e)[:160],
+                )
+            await asyncio.sleep(1)
+        if not data or not data.get("frames"):
+            raise last_err or RuntimeError("no pose frames detected")
         await db.pose_data.replace_one(
             {"analysis_id": analysis_id},
             {"analysis_id": analysis_id, "data": data,

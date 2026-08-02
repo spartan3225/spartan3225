@@ -250,24 +250,35 @@ async function finalizeChunkedUpload(
   totalChunks: number,
   token: string | null
 ): Promise<Analysis> {
-  const res = await fetch(`${API_URL}/analyses/finalize`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({
-      upload_id: uploadId,
-      filename: name,
-      mime_type: mimeType,
-      total_chunks: totalChunks,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Upload failed: ${res.status} ${text}`);
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${API_URL}/analyses/finalize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          upload_id: uploadId,
+          filename: name,
+          mime_type: mimeType,
+          total_chunks: totalChunks,
+        }),
+      });
+      if (res.ok) return (await res.json()) as Analysis;
+      const text = await res.text().catch(() => "");
+      // Don't retry client errors (quota/auth/bad-request) — surface them.
+      if (res.status < 500 && res.status !== 429) {
+        throw new Error(`Upload failed: ${res.status} ${text}`);
+      }
+      lastErr = new Error(`Upload failed: ${res.status} ${text}`);
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
   }
-  return (await res.json()) as Analysis;
+  throw lastErr || new Error("Upload failed");
 }
 
 export async function uploadVideo(
@@ -298,18 +309,20 @@ export async function uploadVideo(
 
     // Small clip: single request (fast path)
     if (blob.size <= CHUNK_SIZE) {
-      const form = new FormData();
       const fileObj =
         typeof File !== "undefined"
           ? new File([blob], name, { type: finalType })
           : blob;
-      form.append("file", fileObj as any, name);
       onProgress?.(10);
-      const res = await fetch(`${API_URL}/analyses`, {
-        method: "POST",
-        headers: authHeaders,
-        body: form as any,
-      });
+      const res = await postFormWithRetry(
+        `${API_URL}/analyses`,
+        () => {
+          const form = new FormData();
+          form.append("file", fileObj as any, name);
+          return form;
+        },
+        authHeaders
+      );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`Upload failed: ${res.status} ${text}`);
@@ -367,15 +380,17 @@ export async function uploadVideo(
 
   // Small clip (or unknown size): single multipart request
   if (!size || size <= CHUNK_SIZE) {
-    const form = new FormData();
-    // @ts-ignore - React Native FormData accepts this shape natively
-    form.append("file", { uri, name, type: mimeType });
     onProgress?.(10);
-    const res = await fetch(`${API_URL}/analyses`, {
-      method: "POST",
-      headers: authHeaders,
-      body: form as any,
-    });
+    const res = await postFormWithRetry(
+      `${API_URL}/analyses`,
+      () => {
+        const form = new FormData();
+        // @ts-ignore - React Native FormData accepts this shape natively
+        form.append("file", { uri, name, type: mimeType });
+        return form;
+      },
+      authHeaders
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`Upload failed: ${res.status} ${text}`);
