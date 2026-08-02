@@ -177,6 +177,7 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
   - E2E validated with REAL AI run: ana_cf496d925cac4b (2 clips, ready, score 63, 14 scores). testing_agent iteration_20: 15/15 backend + full frontend green. Orphan chunks on 402 auto-expire via existing 24h TTL index (non-issue).
 - Google Play: still BLOCKED on Google identity verification (user confirmed still waiting).
 - DONE: LemonSqueezy multi product wired (variant 1975057, $9.99 LIVE). Checkout endpoint verified returning live hosted checkout URL.
+- DONE (June 2026): Friend account pre-seeded — abdelazizmaoulaainine1@gmail.com created as PRO, active, expires ~2026-10-31 (90 days). Auth merges by email, so tier applies on first Google login. NOTE: seeded in this environment's DB; if production uses a separate DB, re-run the seed there.
 
 ## iOS readiness fixes (Aug 2026)
 - Ran expo-appstore-readiness-review skill. Fixed the blocker + warnings:
