@@ -225,7 +225,7 @@ export default function LoginScreen() {
       showsVerticalScrollIndicator={false}
     >
       {/* ===== HERO / LOGIN ===== */}
-      <ImageBackground source={HERO_IMAGE} style={styles.hero} imageStyle={styles.heroImg}>
+      <ImageBackground source={HERO_IMAGE} style={styles.hero} resizeMode="cover">
         <LinearGradient
           colors={[
             "rgba(6,12,20,0.72)",
@@ -681,7 +681,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#060C14",
     justifyContent: "center",
   },
-  heroImg: { resizeMode: "cover" },
   heroContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xxl + spacing.lg,
