@@ -32,6 +32,19 @@ const HERO_IMAGE = require("../assets/surf-login.png");
 
 const SCREEN_H = Dimensions.get("window").height;
 
+// Required for the OAuth browser session to close correctly on native.
+WebBrowser.maybeCompleteAuthSession();
+
+// Guard: the same session_id can surface from multiple sources on Android
+// (auth session result + deep-link listener + initial URL). Exchange once.
+const usedSessionIds = new Set<string>();
+
+function extractSessionId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(/[?#&]session_id=([^&#]+)/);
+  return m && m[1] ? decodeURIComponent(m[1]) : null;
+}
+
 export default function LoginScreen() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
@@ -117,6 +130,20 @@ export default function LoginScreen() {
         router.replace("/auth-callback");
         return;
       }
+      // Cold start (native): app may have been killed and relaunched via the
+      // OAuth deep link — the session_id arrives in the initial URL.
+      if (Platform.OS !== "web") {
+        try {
+          const initialUrl = await Linking.getInitialURL();
+          const sid = extractSessionId(initialUrl);
+          if (sid && !usedSessionIds.has(sid)) {
+            usedSessionIds.add(sid);
+            await exchangeSessionId(sid);
+            router.replace("/(tabs)");
+            return;
+          }
+        } catch {}
+      }
       const me = await fetchMe();
       if (me) {
         router.replace("/(tabs)");
@@ -144,19 +171,37 @@ export default function LoginScreen() {
       const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(
         redirectUrl
       )}`;
-      const result = await WebBrowser.openAuthSessionAsync(
-        authUrl,
-        redirectUrl
-      );
-      if (result.type === "success" && result.url) {
-        const m = result.url.match(/session_id=([^&#]+)/);
-        if (m && m[1]) {
-          await exchangeSessionId(decodeURIComponent(m[1]));
-          router.replace("/(tabs)");
-          return;
-        }
+
+      // On Android, openAuthSessionAsync often returns "dismiss" with no URL
+      // even when login SUCCEEDED (the deep link is delivered separately).
+      // Capture it with a listener registered BEFORE opening the browser.
+      let listenerUrl: string | null = null;
+      const sub = Linking.addEventListener("url", (e) => {
+        if (e?.url && e.url.includes("session_id=")) listenerUrl = e.url;
+      });
+      let result: WebBrowser.WebBrowserAuthSessionResult;
+      try {
+        result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
+      } finally {
+        // Give a hot deep link a beat to arrive before removing the listener.
+        setTimeout(() => sub.remove(), 3000);
       }
-      setError("Sign-in cancelled");
+
+      let sessionId =
+        extractSessionId(result.type === "success" ? result.url : null) ||
+        extractSessionId(listenerUrl);
+      if (!sessionId) {
+        // Last resort: app may have been relaunched via the deep link.
+        sessionId = extractSessionId(await Linking.getInitialURL());
+      }
+
+      if (sessionId && !usedSessionIds.has(sessionId)) {
+        usedSessionIds.add(sessionId);
+        await exchangeSessionId(sessionId);
+        router.replace("/(tabs)");
+        return;
+      }
+      if (!sessionId) setError("Sign-in cancelled");
     } catch (e: any) {
       setError(e?.message || "Sign-in failed");
     } finally {

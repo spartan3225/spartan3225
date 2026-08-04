@@ -227,6 +227,23 @@ test_plan:
 agent_communication:
     -agent: "main"
     -message: |
+      NEW ROUND (post iter21): (a) Emergent Google auth hardened per playbook:
+      SecureStore token on native w/ AsyncStorage migration (web still uses
+      localStorage via AsyncStorage - NO web behavior change expected),
+      maybeCompleteAuthSession, Android dismiss+listener+getInitialURL fallbacks,
+      duplicate session_id guard, cold-start deep link, auth-callback cleans URL
+      after success, backend session indexes (unique token + TTL). (b) logout()
+      now fire-and-forget (verified). (c) Save Video button (download-outline icon,
+      testID save-video-btn) added to analysis video controls - web triggers <a download>.
+      (d) upload size guard 200MB + tip5. Please verify on WEB: 1) email register+login
+      via /api/auth/register and /api/auth/login work E2E from the new login UI
+      (email-input/password-input/email-submit-btn testIDs), 2) localStorage token
+      session still works (set session_token=demo_coach_token -> /(tabs) loads),
+      3) open a ready analysis -> save-video-btn present and clickable, 4) single
+      MP4 upload E2E still reaches ready, 5) logout-btn returns to login screen.
+      Do NOT delete user_sessions broadly; demo tokens were re-seeded.
+    -agent: "main"
+    -message: |
       Please test BACKEND reliability first (highest priority):
       1) Upload a small MP4 via POST /api/analyses (multipart) AND via chunked
          flow (/api/uploads/chunk + /api/analyses/finalize). Both should return

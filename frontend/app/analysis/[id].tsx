@@ -8,12 +8,16 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
+  Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { useEvent } from "expo";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
   Analysis,
   AnalysisComment,
@@ -62,6 +66,39 @@ export default function AnalysisDetail() {
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
+  const [savingVideo, setSavingVideo] = useState(false);
+
+  // Save the analysed clip to the user's device (all tiers, incl. free).
+  const saveVideo = async () => {
+    if (!videoUrl || savingVideo) return;
+    haptic.tap();
+    try {
+      if (Platform.OS === "web") {
+        const a = document.createElement("a");
+        a.href = videoUrl;
+        a.download = `surf-analysis-${id}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        return;
+      }
+      setSavingVideo(true);
+      const dest = `${FileSystem.cacheDirectory}surf-analysis-${id}.mp4`;
+      const dl = await FileSystem.downloadAsync(videoUrl, dest);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dl.uri, {
+          mimeType: "video/mp4",
+          dialogTitle: "Save your surf clip",
+        });
+      } else {
+        Alert.alert("Saved", "Video downloaded to app storage.");
+      }
+    } catch {
+      Alert.alert("Error", "Could not save the video. Please try again.");
+    } finally {
+      setSavingVideo(false);
+    }
+  };
   const [pose, setPose] = useState<PoseData | null>(null);
   const [poseStatus, setPoseStatus] = useState<string>("none");
   const [overlayOn, setOverlayOn] = useState(false);
@@ -328,6 +365,22 @@ export default function AnalysisDetail() {
                 >
                   {SPEEDS[speedIdx]}x
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.ctrlBtn}
+                onPress={saveVideo}
+                disabled={savingVideo || !videoUrl}
+                testID="save-video-btn"
+              >
+                {savingVideo ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons
+                    name="download-outline"
+                    size={17}
+                    color={colors.textPrimary}
+                  />
+                )}
               </TouchableOpacity>
               {poseStatus === "ready" && pose && clipIdx === 0 ? (
                 <TouchableOpacity

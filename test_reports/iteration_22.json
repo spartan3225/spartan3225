@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 22 - iter21 fixes (SecureStore/AsyncStorage token migration, fire-and-forget logout, new Save Video button, 200 MB upload guard, session-index hardening) verified END-TO-END. Backend pytest: 5/5 PASS in /app/backend/tests/test_iter22_auth_save_video.py (~113s). (1) POST /api/auth/register {email, password, name} -> 200 with session_token; GET /api/auth/me with that bearer -> 200; POST /api/auth/logout -> 200; GET /api/auth/me post-logout -> 401 (session revoked). (2) POST /api/auth/login on the same account -> 200; wrong password -> 401. (3) Direct multipart POST /api/analyses with demo_coach_token + tiny 1s H.264 mp4 (built via imageio-ffmpeg lavfi) returns 200 in <500ms; immediately streams video 200 with Content-Type=video/mp4 (persistence-first still intact); polls to status=ready inside ~120s; streams again 200 after ready. (4) db.user_sessions has BOTH the unique session_token index AND the TTL expires_at (expireAfterSeconds=0) index confirmed via index_information(). Frontend (mobile 390x844, real browser): the new email-first login UI works end-to-end on web. login-screen renders with login-google-btn + email-input + password-input + toggle-register-btn + email-submit-btn. Tapping toggle-register-btn -> Register mode; submitting fresh random email + TestPass123! -> lands in /(tabs) with dashboard-screen visible and localStorage.session_token populated. Navigating to /profile + tapping logout-btn -> instantly back on login-screen, localStorage.session_token cleared (fire-and-forget logout confirmed - no hang). Filling the SAME credentials in Log-in mode + email-submit-btn -> dashboard-screen. Web SESSION continuity: localStorage.setItem('session_token','demo_coach_token') + reload -> KAI dashboard renders (SecureStore refactor did NOT break web; AsyncStorage still maps to localStorage). Analysis page: opened /analysis/ana_65be031070d343 (a coach-tier ready analysis discovered via GET /api/analyses) -> save-video-btn visible in the video controls row; programmatic click intercepts the anchor and yields href = https://wave-motion-ai.preview.emergentagent.com/api/analyses/ana_65be031070d343/video?token=... (download attribute set) -> web download path works with no JS errors. Cleaned up: the qa_iter22 test user was DELETED via /api/auth/account after the flow; no leftover users. No new analyses were created in the UI pass (used an existing one). Only 401s in the console were the pre-login /auth/me probes on the login screen (expected).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "index.tsx heroImg style.resizeMode (carry-over from iter18-21)", "issue": "Login hero still sets resizeMode via style; react-native-web warns 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' Not a regression, but still there. Reference: /app/frontend/app/index.tsx:684"}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter22_auth_save_video.py",
+    "/app/test_reports/pytest/iteration_22_auth_save.xml"
+  ],
+  "action_items": [
+    "(cosmetic / carry-over) Migrate ImageBackground/Image style.resizeMode -> props.resizeMode on login hero (index.tsx:684) to silence the last react-native-web warning.",
+    "(perf / carry-over from iter21) Wrap Mediapipe pose extraction in run_in_executor / ProcessPoolExecutor so the FastAPI event loop stays responsive while a user is streaming their video back. Symptom still observed in this iteration: first GET /api/analyses/{id}/video right after a chunked upload finalize can take 15-45s or 502 while pose runs; retry-with-backoff succeeds (test covers this).",
+    "(cleanup / carry-over) server.py is 2400+ lines - split into routers/{auth,uploads,analyses,coach,payments}.py."
+  ],
+  "critical_code_review_comments": [
+    "getToken/setToken/clearToken in /app/frontend/src/api.ts branch cleanly on Platform.OS === 'web' -> AsyncStorage (localStorage) unchanged; native -> SecureStore with transparent one-time migration from AsyncStorage. clearToken removes from BOTH stores. Correct.",
+    "logout() in api.ts clears the local token BEFORE firing POST /api/auth/logout and does NOT await the request (.catch() only) - genuine fire-and-forget. UI now returns instantly even on flaky networks.",
+    "index.tsx registers Linking.addEventListener('url', ...) BEFORE openAuthSessionAsync and also reads Linking.getInitialURL() on cold start; extractSessionId + usedSessionIds Set guarantees a session_id is only exchanged once even if it surfaces from result.url + listener + initial URL. Matches Emergent Google auth playbook.",
+    "auth-callback.tsx now cleans window.history state ONLY after exchangeSessionId succeeds - a failed exchange leaves the session_id in the URL so the user can retry / refresh. Correct.",
+    "server.py:2479-2481 creates db.user_sessions indexes (session_token unique, user_id, expires_at TTL) at startup - verified live via pymongo index_information().",
+    "analysis/[id].tsx:72 saveVideo works for ALL tiers (no tier gating), web path uses <a download>, native path uses expo-file-system.downloadAsync + expo-sharing share sheet. testID=save-video-btn. Verified rendering + click on web.",
+    "upload.tsx line 73 shows a friendly 200 MB size guard message before the upload request even fires, preventing the ingress from swallowing giant clips."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter22_auth_save_video.py (new - 5 tests, all pass)"
+  ],
+  "success_rate": {"backend": "100% (5/5)", "frontend": "100% (all 7 requested UI checks: login-screen render, register->tabs, logout->login+token cleared, login->tabs, demo_coach_token dashboard, save-video-btn present, save-video click download URL correct)"},
+  "seed_data_creation": "None persisted. One QA user (qa_iter22_ui_de4sea50@surfcoach23.com) was created via UI and immediately DELETED via /api/auth/account. Three pytest QA users were created and each DELETED via /api/auth/account in teardown_class. One analysis was created by the pytest upload test and DELETED via /api/analyses/{id} in teardown_class. No production or seed data touched. No db.user_sessions.delete_many({}) was ever run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 22 focused on: (a) email/password lifecycle post-token-refactor, (b) save-video button on analysis page, (c) session_token indexes. Backend suite lives at /app/backend/tests/test_iter22_auth_save_video.py and runs in ~113s. Key testIDs verified stable: login-screen, login-google-btn, toggle-register-btn, email-input, password-input, email-submit-btn, login-error, dashboard-screen, logout-btn, save-video-btn. IMPORTANT for future auth tests: Pydantic's email validator REJECTS `.test`/`.example` TLDs - always use a real-ish TLD like `.com` when creating QA users (we use `qa_*@surfcoach23.com`). The Emergent Google OAuth flow still cannot be automated end-to-end (external Google) - only assert the button renders and no JS errors on the login screen. Save-Video on web is validated by intercepting HTMLAnchorElement.prototype.click and asserting the href points to /api/analyses/{id}/video?token=... - the real browser download is not triggered inside Playwright (no need). Native save via expo-sharing was NOT exercised (needs a dev-client / real device). Iter21 pose-blocks-event-loop perf note still applies: retry-with-backoff on GET /analyses/{id}/video is still needed right after finalize.",
+  "rca_of_issue": "N/A - no bugs found this iteration. All 4 features shipped by main agent are working end-to-end on the preview. User's production issue is due to production running OLD code (as noted in the request); redeploying the current preview build should resolve it."
+}

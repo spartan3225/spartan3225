@@ -22,17 +22,9 @@ export default function AuthCallback() {
       try {
         let sessionId: string | null = null;
         if (Platform.OS === "web" && typeof window !== "undefined") {
-          const hash = window.location.hash || "";
-          const m = hash.match(/session_id=([^&]+)/);
+          const src = (window.location.hash || "") + (window.location.search || "");
+          const m = src.match(/session_id=([^&#]+)/);
           if (m && m[1]) sessionId = decodeURIComponent(m[1]);
-          // Clean URL
-          if (sessionId) {
-            window.history.replaceState(
-              null,
-              "",
-              window.location.pathname
-            );
-          }
         }
         if (!sessionId) {
           setError("Missing session id");
@@ -40,6 +32,14 @@ export default function AuthCallback() {
           return;
         }
         await exchangeSessionId(sessionId);
+        // Clean the URL only AFTER the exchange succeeded.
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.history.replaceState(
+            window.history.state,
+            "",
+            window.location.pathname
+          );
+        }
         // Send new sign-ins to plans first; X closes to dashboard.
         router.replace("/paywall");
       } catch (e: any) {

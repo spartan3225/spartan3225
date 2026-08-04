@@ -2475,6 +2475,16 @@ async def _ensure_indexes():
             "reviewer account upgrade failed", exc_info=True
         )
     try:
+        # Auth indexes: fast session lookup + automatic expiry cleanup.
+        await db.user_sessions.create_index("session_token", unique=True)
+        await db.user_sessions.create_index("user_id")
+        await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
+        await db.users.create_index("user_id", unique=True)
+    except Exception:
+        logging.getLogger("surfai").warning(
+            "auth index creation failed", exc_info=True
+        )
+    try:
         # Orphaned chunks auto-expire after 24h
         await db.upload_chunks.create_index(
             "created_at", expireAfterSeconds=86400

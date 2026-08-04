@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 
 // On web, always call the API on the same domain the site is served from
@@ -12,21 +13,48 @@ const BACKEND_URL =
 export const API_URL = `${BACKEND_URL}/api`;
 
 const TOKEN_KEY = "session_token";
+const isWeb = Platform.OS === "web";
 
+// Token storage: SecureStore (encrypted keychain) on native, localStorage on
+// web (AsyncStorage maps to localStorage there). Old tokens saved in
+// AsyncStorage on native are migrated transparently so nobody gets logged out.
 export async function getToken(): Promise<string | null> {
   try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
+    if (isWeb) return await AsyncStorage.getItem(TOKEN_KEY);
+    const secure = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (secure) return secure;
+    // One-time migration from the old AsyncStorage location.
+    const legacy = await AsyncStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      try {
+        await SecureStore.setItemAsync(TOKEN_KEY, legacy);
+        await AsyncStorage.removeItem(TOKEN_KEY);
+      } catch {}
+      return legacy;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 export async function setToken(token: string): Promise<void> {
-  await AsyncStorage.setItem(TOKEN_KEY, token);
+  if (isWeb) {
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+  } else {
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+  }
 }
 
 export async function clearToken(): Promise<void> {
-  await AsyncStorage.removeItem(TOKEN_KEY);
+  try {
+    await AsyncStorage.removeItem(TOKEN_KEY);
+  } catch {}
+  if (!isWeb) {
+    try {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } catch {}
+  }
 }
 
 export async function apiFetch<T = any>(
