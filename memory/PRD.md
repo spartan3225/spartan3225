@@ -248,3 +248,10 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - KEPT (do not remove): Save Video button, upload 200MB guard+tip5, all reliability fixes, Pro Reference clips+skeleton compare, logout fix.
 - Leftover unused (harmless): assets/kai-coach.png, assets/surf-login.png, i18n kai_msg_*/ach_*/quote_*/home_tagline keys.
 - static_web re-exported with rollback. USER MUST REDEPLOY.
+
+## Final verification round (iter23, 11/11 PASS)
+- HEVC .mov (hvc1, video/quicktime) upload E2E VERIFIED: 200 -> ready ~90s, mime converted to video/mp4 (bundled ffmpeg), video streams immediately (persistence-first) + after ready. User's recurring production .MOV failure is fixed in current build - PROD STILL OLD, REDEPLOY REQUIRED.
+- Design rollbacks verified on web: login SURFCOACH·23/MASTER EVERY WAVE (no KAI/Aloha), home Ride better./Every session. (no KAI hero).
+- App Store BLOCKER FIXED: paywall.tsx PlanCard price row now Platform.OS !== "ios" gated (Apple 3.1.1 Netflix model). Web still shows 15/25/35 USD (verified). Compare screen "coming soon" pills left: maneuver chips pill unreachable (all available:true); ghost-overlay card pill intentional (feature genuinely not built).
+- Readiness review remaining items (NOT done): Apple token revoke on account deletion (5.1.1(v) warning), root ErrorBoundary, App Store Connect manual items (privacy labels, demo account qa.tester@surfcoach23.com/TestPass123! in review notes, support+privacy URLs).
+- static_web re-exported with final state.
