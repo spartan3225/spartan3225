@@ -240,3 +240,11 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - INCIDENT: main agent accidentally ran user_sessions.delete_many({}) during test cleanup -> ALL sessions cleared; demo sessions re-seeded from test_credentials.md snippet; real users must re-login once (no data loss).
 - iter22: backend 5/5 + frontend 7/7 PASS (register/login/logout lifecycle, web token session, save-video-btn works, upload->ready, session indexes confirmed). Carry-over minor: video GET during ACTIVE processing can be slow 15-45s (event loop busy during AI phase; pose already in ProcessPool) - acceptable, instant once ready.
 - CRITICAL FOR USER: production (wave-motion-ai.emergent.host) still runs OLD build - user's screenshot failures (analysis failed + video lost + 50MB copy) are all from pre-fix code. USER MUST REDEPLOY.
+
+## FULL KAI DESIGN ROLLBACK (user request, session 2 end)
+- User decided the KAI redesign was NOT good. Rolled back BOTH:
+  - LOGIN: restored "SURFCOACH · 23 / MASTER EVERY WAVE" hero (Image url unsplash, stats AI/4K/30s, Google/Apple/Email toggle). KEPT auth hardening (maybeCompleteAuthSession, usedSessionIds, extractSessionId, Android fallbacks, cold-start, SecureStore in api.ts).
+  - HOME: restored old "Ride better. Every session." dashboard from git commit c5bd7c1 (426 lines: home_headline, LATEST SESSION card + ScoreRing, Analyze a Wave/My Progress/Start Training, stats SESSIONS/AVG/BEST, AI COACH INSIGHT, RECENT SESSIONS). tab_review reverted "Kai Review"->"AI Review".
+- KEPT (do not remove): Save Video button, upload 200MB guard+tip5, all reliability fixes, Pro Reference clips+skeleton compare, logout fix.
+- Leftover unused (harmless): assets/kai-coach.png, assets/surf-login.png, i18n kai_msg_*/ach_*/quote_*/home_tagline keys.
+- static_web re-exported with rollback. USER MUST REDEPLOY.

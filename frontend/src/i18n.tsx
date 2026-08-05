@@ -21,7 +21,7 @@ export const LANGUAGES: { code: Lang; label: string; flag: string }[] = [
 const en: Record<string, string> = {
   // Tabs
   tab_home: "Home",
-  tab_review: "Kai Review",
+  tab_review: "AI Review",
   tab_progress: "Progress",
   tab_train: "Train",
   tab_profile: "Profile",
