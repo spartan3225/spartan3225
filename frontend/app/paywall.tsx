@@ -313,16 +313,20 @@ function PlanCard({
           </View>
         )}
       </View>
-      <Text style={styles.priceRow}>
-        <Text style={[styles.price, highlight && { color: colors.primary }]}>
-          {plan.amount === 0
-            ? "Free"
-            : `${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}`}
+      {/* Apple 3.1.1: external-purchase pricing must NOT be shown on iOS.
+          Plans render name + features only; amounts appear on web/Android. */}
+      {Platform.OS !== "ios" && (
+        <Text style={styles.priceRow}>
+          <Text style={[styles.price, highlight && { color: colors.primary }]}>
+            {plan.amount === 0
+              ? "Free"
+              : `${plan.amount.toFixed(0)} ${(plan.currency || "usd").toUpperCase()}`}
+          </Text>
+          <Text style={styles.priceUnit}>
+            {plan.amount === 0 ? "  forever" : `  /${plan.interval || "month"}`}
+          </Text>
         </Text>
-        <Text style={styles.priceUnit}>
-          {plan.amount === 0 ? "  forever" : `  /${plan.interval || "month"}`}
-        </Text>
-      </Text>
+      )}
       {plan.features.map((f, i) => (
         <View key={i} style={styles.featureRow}>
           <Ionicons

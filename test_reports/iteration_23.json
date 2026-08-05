@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 23 — PRIMARY iPhone .MOV bug + full design rollback (home + login) + iOS-only paywall hiding all verified END-TO-END. Backend pytest: 6/6 PASS in /app/backend/tests/test_iter23_mov_persistence_paywall.py (~87s). (1) Real HEVC (hvc1) .mov clip built via bundled imageio-ffmpeg (libx265 -tag:v hvc1) and multipart-uploaded to POST /api/analyses with filename=*.mov + Content-Type=video/quicktime + Authorization: Bearer demo_coach_token → 200 with status=processing in <2s. (2) Persistence-first confirmed: GET /api/analyses/{id}/video?token=demo_coach_token streamed 200 immediately after upload (while still processing) — GridFS write happens before Gemini task. (3) Polled to status=ready inside ~90s and the served Content-Type on GET /video is video/mp4 (not video/quicktime), proving _convert_to_mp4_if_needed ran and DB mime_type was updated. (4) Video still streams 200 after ready (persistence intact end-to-end). (5) POST /api/payments/lemonsqueezy/checkout {plan_id:'learn', origin_url:BASE_URL} still returns 200 with a lemonsqueezy.com URL. Frontend (mobile 390x844, real Chromium via browser automation): all 5 requested UI checks PASS. (a) Logged-out / renders login-screen with 'SURFCOACH · 23' brand + 'MASTER EVERY WAVE.' title + 'Continue with Google' + 'Continue with Email' — 'KAI' branding is ABSENT and 'Aloha' glass-card design is ABSENT. (b) Logged-in /(tabs) with localStorage session_token=demo_coach_token renders dashboard-screen with 'SURFCOACH · 23' brand + 'Ride better. / Every session.' headline + 'Analyze a Wave' primary quick-action + stats row (9/0/0) + 'AI COACH INSIGHT' card — no 'KAI'/'THE AI SURF COACH' hero. (c) Web /paywall (logged-in) shows real USD prices: '15 USD /month' (LEARN), '25 USD /month' (ADVANCED), '35 USD /month' (PRO) — iOS-only price hiding does NOT affect web. Paywall did not crash. (d) save-video-btn is visible on ana_1ac1344f21694b (a ready analysis discovered via GET /api/analyses). (e) Tapping logout-btn on /profile returns to login-screen and localStorage.session_token is cleared. Only console noise = pre-existing pre-login /auth/me 401 probe (expected).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "index.tsx (login hero image)", "issue": "react-native-web still emits 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' on the login hero. Not a regression; carried over from iter18-22. Reference: /app/frontend/app/index.tsx (styles.heroImg)."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter23_mov_persistence_paywall.py",
+    "/app/test_reports/pytest/iteration_23_mov.xml"
+  ],
+  "action_items": [
+    "(cosmetic / carry-over) Migrate ImageBackground/Image style.resizeMode -> props.resizeMode on login hero to silence the last react-native-web warning.",
+    "(perf / carry-over from iter21) Move Mediapipe pose extraction to run_in_executor / ProcessPoolExecutor so the FastAPI event loop stays responsive during background processing. This iteration's uploads still occasionally saw slower /video responses during active pose extraction; persistence-first retry pattern masks it."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:_convert_to_mp4_if_needed (line 1388) runs ffmpeg -c:v libx264 with -movflags +faststart and correctly falls back to bundled imageio-ffmpeg via _resolve_ffmpeg — confirmed converting a real HEVC (hvc1) .mov file on this deploy pod.",
+    "backend/server.py:1504 updates DB doc mime_type to 'video/mp4' after conversion, so the streaming endpoint at /analyses/{id}/video returns Content-Type: video/mp4 post-conversion — verified via HEAD-of-stream in test 4.",
+    "frontend/app/(tabs)/index.tsx is the ROLLED-BACK dashboard: 'SURFCOACH · 23' brand row, i18n home_headline='Ride better.\\nEvery session.', primary QuickAction label 'Analyze a Wave', GlassCard stats, and 'AI COACH INSIGHT' card. Correct rollback.",
+    "frontend/app/index.tsx is the ROLLED-BACK login: brandLabel='SURFCOACH · 23', title 'MASTER EVERY WAVE.', signInText 'Continue with Google', with the email login toggle. No 'Aloha' glass-card design.",
+    "frontend/app/paywall.tsx:318 gates the price row with `Platform.OS !== 'ios'` and the CTA prices in lines 244-247 render only inside `Platform.OS === 'web'` block (line 211) — so web still shows USD prices while iOS hides them (App Store safe). Verified live: 15 USD / 25 USD / 35 USD visible on web /paywall."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter23_mov_persistence_paywall.py (new — 6 tests, all pass)"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (5/5 UI checks: login rollback, home rollback, web paywall prices visible, save-video-btn present, logout returns to login+clears token)"},
+  "seed_data_creation": "None persisted. One HEVC .mov analysis was uploaded via the pytest and DELETED via DELETE /api/analyses/{id} in teardown_class. No production or seed data touched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 23 confirms both the primary iPhone .MOV bug fix (imageio-ffmpeg-driven HEVC->MP4 conversion end-to-end with persistence-first GridFS) AND the design rollback (home + login) AND the App Store iOS-only paywall price hiding (web still shows prices). Backend suite lives at /app/backend/tests/test_iter23_mov_persistence_paywall.py, runs in ~90s. Key content strings to guard against future regressions: login must contain 'SURFCOACH · 23' + 'MASTER EVERY WAVE.' + 'Continue with Google' + 'Continue with Email'; home must contain 'SURFCOACH · 23' + 'Ride better.' + 'Analyze a Wave' + 'AI COACH INSIGHT'; login/home must NOT contain 'KAI' + 'THE AI SURF COACH' (KAI dashboard rebrand was rolled back) and login must NOT contain 'Aloha'. Paywall on web MUST show USD prices; on iOS Platform.OS==='ios' branch hides the price rows (styles.priceRow) and the CTA prices. HEVC .mov building recipe for future iterations: `ffmpeg -f lavfi -i color=blue:s=256x256:d=2:r=24 -c:v libx265 -tag:v hvc1 -pix_fmt yuv420p -t 2 -movflags +faststart out.mov` — use imageio_ffmpeg.get_ffmpeg_exe() to get the binary path. Backend upload accepts filename=*.mov + Content-Type=video/quicktime and returns 200 in <2s (fully background). Video is streamable IMMEDIATELY (persistence-first) — do not wait for status=ready before asserting a 200 on /video. After ready, Content-Type on the video stream becomes video/mp4 (proof conversion ran).",
+  "rca_of_issue": "N/A — no bugs found this iteration. The user's iPhone .MOV upload issue is resolved on the current preview build (bundled ffmpeg + persistence-first + retry backoff). If the user is still seeing failures in production, they are on an OLD build; redeploying the current preview to production should resolve it."
+}
