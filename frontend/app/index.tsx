@@ -101,7 +101,12 @@ export default function LoginScreen() {
       ]
         .filter(Boolean)
         .join(" ");
-      await appleLogin(credential.identityToken, fullName || null, credential.email);
+      await appleLogin(
+        credential.identityToken,
+        fullName || null,
+        credential.email,
+        credential.authorizationCode
+      );
       router.replace("/(tabs)");
     } catch (e: any) {
       if (e?.code === "ERR_REQUEST_CANCELED") return; // user cancelled

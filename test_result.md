@@ -261,3 +261,11 @@ agent_communication:
       (free, may be quota-capped), demo_coach_token (coach tier). For upload
       tests that need quota, use demo_coach_token. Backend base for curl:
       https://wave-motion-ai.preview.emergentagent.com/api
+    -agent: "main"
+    -message: |
+      ITERATION 24 (App Store warning fixes) — ALL PASSED (9/9 backend, 4/4 frontend).
+      1) Apple token revoke on DELETE /api/auth/account (graceful skip w/o Apple env vars),
+      2) authorization_code accepted on POST /auth/apple (401 regression intact),
+      3) Root ErrorBoundary in _layout.tsx, 4) Ghost Overlay "Coming Soon" card removed
+      from compare/[id].tsx. Web export rebuilt to static_web. Test file:
+      /app/backend/tests/test_iter24_apple_revoke_delete.py. demo tokens re-seeded.

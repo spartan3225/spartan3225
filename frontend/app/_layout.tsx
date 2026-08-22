@@ -3,10 +3,12 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { I18nProvider } from "../src/i18n";
+import ErrorBoundary from "../src/components/ErrorBoundary";
 
 export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
+      <ErrorBoundary>
       <SafeAreaProvider>
         <I18nProvider>
         <StatusBar style="light" />
@@ -39,6 +41,7 @@ export default function RootLayout() {
         </Stack>
         </I18nProvider>
       </SafeAreaProvider>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }

@@ -291,19 +291,6 @@ export default function CompareScreen() {
           </GlassCard>
         )}
 
-        {/* Ghost overlay placeholder */}
-        <GlassCard style={styles.card} accent={colors.primary} testID="ghost-overlay-card">
-          <View style={styles.ghostHead}>
-            <Ionicons name="body-outline" size={16} color={colors.primary} />
-            <Text style={styles.ghostTitle}>
-              {t("ghost_overlay").toUpperCase()}
-            </Text>
-            <View style={styles.soonPill}>
-              <Text style={styles.soonPillText}>{t("coming_soon")}</Text>
-            </View>
-          </View>
-          <Text style={styles.ghostText}>{t("ghost_soon")}</Text>
-        </GlassCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -402,15 +389,4 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   barFill: { height: 5, borderRadius: 3 },
-  ghostHead: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 8 },
-  ghostTitle: { color: colors.primary, fontSize: 11, letterSpacing: 2, fontWeight: "800", flex: 1 },
-  soonPill: {
-    borderWidth: 1,
-    borderColor: colors.glassBorder,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  soonPillText: { color: colors.textMuted, fontSize: 9, fontWeight: "800" },
-  ghostText: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
 });

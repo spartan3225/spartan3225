@@ -255,3 +255,11 @@ User requested full premium transformation (Apple/Tesla/WHOOP feel) WITHOUT brea
 - App Store BLOCKER FIXED: paywall.tsx PlanCard price row now Platform.OS !== "ios" gated (Apple 3.1.1 Netflix model). Web still shows 15/25/35 USD (verified). Compare screen "coming soon" pills left: maneuver chips pill unreachable (all available:true); ghost-overlay card pill intentional (feature genuinely not built).
 - Readiness review remaining items (NOT done): Apple token revoke on account deletion (5.1.1(v) warning), root ErrorBoundary, App Store Connect manual items (privacy labels, demo account qa.tester@surfcoach23.com/TestPass123! in review notes, support+privacy URLs).
 - static_web re-exported with final state.
+
+## Session (June 2026) — App Store Warning Fixes (Iteration 24)
+- FIXED all 3 remaining readiness-review warnings; 13/13 tests passed (iteration_24):
+  1. Apple token revocation (Guideline 5.1.1(v)): `/auth/apple` now accepts `authorization_code`, exchanges it for a refresh token (stored as `apple_refresh_token`), and `DELETE /api/auth/account` revokes it via appleid.apple.com/auth/revoke. Gracefully skips when APPLE_TEAM_ID / APPLE_KEY_ID / APPLE_PRIVATE_KEY / APPLE_CLIENT_ID env vars are unset (current state). To enable live revocation in prod, add those 4 vars to backend/.env (Sign in with Apple .p8 key from Apple Developer portal).
+  2. Root ErrorBoundary: new `/app/frontend/src/components/ErrorBoundary.tsx` wraps the app in `_layout.tsx` — friendly "Try Again" screen instead of blank white crash.
+  3. "Coming Soon" Ghost Overlay card removed from Compare screen (all 6 pro chips remain available:true).
+- Web export rebuilt into /app/backend/static_web. USER MUST REDEPLOY to see changes live.
+- Remaining: Forgot Password email flow (upcoming), Google Play identity verification (user side), App Store Connect metadata forms (user side), server.py refactor (backlog).

@@ -1,0 +1,41 @@
+{
+  "summary": "Iteration 24 — Apple Sign-in token revocation on account deletion (Guideline 5.1.1(v)) + Root ErrorBoundary + Ghost Overlay 'Coming Soon' card removal on Compare screen. ALL 3 changes verified end-to-end. Backend pytest: 9/9 PASS in /app/backend/tests/test_iter24_apple_revoke_delete.py. (1) DELETE /api/auth/account with a seeded user (apple_sub + apple_refresh_token='fake_rt_TEST') returns 200 {ok:true} WITHOUT 500ing — _apple_revoke_refresh_token gracefully skips because APPLE_TEAM_ID/KEY_ID/PRIVATE_KEY are unset (verified via _apple_revocation_configured() short-circuit at server.py:566). User, all user_sessions and all analyses are removed from Mongo; the same Bearer token then returns 401 on GET /api/auth/me. (2) POST /api/auth/apple accepts the new optional authorization_code field (no 422/500 from schema); with an invalid identity_token + a fake authorization_code the endpoint still returns 401 'Invalid Apple identity token' — the new field does not cause a crash. Regression: POST /api/auth/apple with missing identity_token still returns 422. (3) Regression: GET /api/auth/me with demo_token_active returns 200 with user_id=user_demo_12345 (after reseed), POST /api/auth/logout with a throwaway Bearer token returns {ok:true} AND deletes the session row, POST /api/auth/logout with no auth header still returns {ok:true}. Frontend (mobile 390x844, real Chromium): all 4 UI checks PASS. (a) Logged-out / renders login-screen with 'SURFCOACH · 23' + 'MASTER EVERY WAVE.' + 'Continue with Google' + 'Continue with Email' — ErrorBoundary wrap in app/_layout.tsx did NOT break the tree, no error-retry-btn visible. (b) Logged-in /(tabs) with localStorage session_token=demo_coach_token renders dashboard-screen. (c) /compare/ana_1ac1344f21694b renders compare-screen; the ghost-overlay-card testID is ABSENT from the DOM and 'Coming Soon' text is NOT present anywhere; the surrounding features still render — 6 pro reference chips (pro-* testIDs), split-screen container (split-screen testID), radar chart (compare-radar testID) and metric bars (compare-bars testID). (d) Tapping logout-btn on /(tabs)/profile returns to login-screen and clears localStorage.session_token. Only console noise = pre-existing pre-login /auth/me 401 probe (expected) + the same 'Image: style.resizeMode is deprecated' warning carried over from iter18-23.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "index.tsx (login hero image)", "issue": "react-native-web still emits 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' on the login hero. Not a regression; carried over from iter18-23. Reference: /app/frontend/app/index.tsx (styles.heroImg)."},
+      {"component": "GestureHandlerRootView / pointerEvents", "issue": "react-native-web warning 'props.pointerEvents is deprecated. Use style.pointerEvents' on Compare + Home screens. Not blocking. Likely from a third-party (react-native-safe-area-context / gesture-handler) component; harmless."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter24_apple_revoke_delete.py",
+    "/app/test_reports/pytest/iteration_24_apple_delete.xml"
+  ],
+  "action_items": [
+    "(cosmetic / carry-over) Migrate ImageBackground/Image style.resizeMode -> props.resizeMode on login hero to silence the last react-native-web warning.",
+    "(nice-to-have) When APPLE_TEAM_ID/KEY_ID/PRIVATE_KEY are eventually provisioned in prod, add a live integration test that hits appleid.apple.com/auth/revoke against a sandbox refresh token so revocation is exercised end-to-end (right now revocation is code-reviewed only)."
+  ],
+  "critical_code_review_comments": [
+    "backend/server.py:2428-2462 (delete_account): correctly fetches apple_refresh_token BEFORE deleting the user, calls _apple_revoke_refresh_token (best-effort, non-blocking), then cascades: analyses (+ GridFS video files + on-disk video_path), analysis_comments (author_id OR user_id), upload_chunks, user_sessions, users, and rmtree(UPLOAD_DIR/user_id). Meets App Store Guideline 5.1.1(v).",
+    "backend/server.py:541-561 _apple_exchange_code + :564-584 _apple_revoke_refresh_token both short-circuit on _apple_revocation_configured()==False (line 543 / 566) so unset APPLE_TEAM_ID/KEY_ID/PRIVATE_KEY = graceful skip, no exception. Verified live: DELETE /api/auth/account with apple_refresh_token set returns 200, no 500. Both helpers also wrap the httpx call in try/except with logger.warning — no exception can bubble up to the caller.",
+    "backend/server.py:587-591 AppleLoginRequest: authorization_code: Optional[str]=None is correctly optional. server.py:648-654 only exchanges/persists the refresh token when BOTH req.authorization_code truthy AND _apple_revocation_configured() — so login still works with just an identity_token (backwards compatible).",
+    "frontend/app/_layout.tsx: ErrorBoundary is placed INSIDE GestureHandlerRootView and OUTSIDE SafeAreaProvider/I18nProvider/Stack — correct placement so a crash in providers or any screen is caught. The fallback UI (Try Again button, testID error-retry-btn) uses View/Text/TouchableOpacity + StyleSheet only.",
+    "frontend/src/components/ErrorBoundary.tsx: idiomatic class ErrorBoundary implementing getDerivedStateFromError + componentDidCatch (logs the error). handleRetry resets hasError. All text wrapped in Text. testID='error-retry-btn' present. Colors match app theme (#0A0A0A bg, #22D3EE CTA). 44px+ touch target (minHeight:48).",
+    "frontend/app/compare/[id].tsx: ghost overlay card fully removed — no 'ghost-overlay-card' testID, no 'Coming Soon' string, no ghost_overlay styles referenced anywhere in the file. Confirmed by grep + live DOM inspection. Remaining Compare features intact: reference athlete chips (pro-* testIDs), split-screen videos, RadarChart (renders only when >=3 axes with defined userScores), metric bars, back button.",
+    "frontend/src/api.ts:appleLogin now forwards authorization_code — main agent should ensure the RN AppleAuthentication.signInAsync() call captures response.authorizationCode and passes it through (I did not audit the caller in this iteration; only the api.ts wrapper was in scope)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter24_apple_revoke_delete.py (new — 9 tests, 9 pass)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% (4/4 UI checks: login screen renders under ErrorBoundary, dashboard after auth, compare screen ghost-overlay removed + pro-chips/split/radar/bars still present, logout returns to login)"},
+  "seed_data_creation": "Re-seeded demo_token_active + demo_coach_token per /app/memory/test_credentials.md re-seed snippet (they were missing at start). Test-created Apple users are prefixed 'user_TESTAPPLE_' and are wiped by the DELETE /api/auth/account call under test + teardown fallback.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 24 confirms the 3 App-Store readiness fixes: (1) Apple token revocation on account deletion is wired to DELETE /api/auth/account and skips gracefully without Apple env vars, (2) Root ErrorBoundary wraps the entire tree in app/_layout.tsx and does not interfere with normal render, (3) 'Coming Soon' Ghost Overlay is removed from /compare/[id].tsx while pro chips / split-screen / radar / metric bars still render. Backend suite at /app/backend/tests/test_iter24_apple_revoke_delete.py runs in <1s. Notable test pattern to reuse: seed a user with apple_refresh_token='fake_rt_TEST' + a fresh session, then DELETE /api/auth/account with Bearer <session_token> — since Apple env vars are unset, the revoke helper returns None instantly and the DELETE completes 200. If Apple env vars are ever set in this pod, wrap the seeded refresh_token in a value Apple sandbox will accept OR the test must be marked xfail. Also — /app/memory/test_credentials.md re-seed snippet needs to be run BEFORE this suite for the demo_token_active regression test to pass; otherwise it will skip. Compare screen live analyses available under demo_coach_token: 9 ready analyses; ana_1ac1344f21694b was used in this iteration."
+}

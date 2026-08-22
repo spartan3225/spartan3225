@@ -504,11 +504,91 @@ APPLE_AUDIENCES = [
 ]
 _apple_jwks_client = None
 
+# Apple token revocation (App Store Guideline 5.1.1(v)).
+# Requires a Sign in with Apple key from the Apple Developer portal.
+# If not configured, revocation is skipped gracefully (deletion still works).
+APPLE_TEAM_ID = os.environ.get("APPLE_TEAM_ID", "").strip()
+APPLE_KEY_ID = os.environ.get("APPLE_KEY_ID", "").strip()
+APPLE_PRIVATE_KEY = os.environ.get("APPLE_PRIVATE_KEY", "").replace("\\n", "\n").strip()
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "").strip() or next(
+    (a for a in APPLE_AUDIENCES if a != "host.exp.Exponent"), ""
+)
+
+
+def _apple_revocation_configured() -> bool:
+    return bool(APPLE_TEAM_ID and APPLE_KEY_ID and APPLE_PRIVATE_KEY and APPLE_CLIENT_ID)
+
+
+def _apple_client_secret() -> str:
+    """ES256-signed client secret JWT for Apple's token endpoints."""
+    import jwt as pyjwt
+
+    now = datetime.now(timezone.utc)
+    return pyjwt.encode(
+        {
+            "iss": APPLE_TEAM_ID,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=10)).timestamp()),
+            "aud": "https://appleid.apple.com",
+            "sub": APPLE_CLIENT_ID,
+        },
+        APPLE_PRIVATE_KEY,
+        algorithm="ES256",
+        headers={"kid": APPLE_KEY_ID},
+    )
+
+
+async def _apple_exchange_code(authorization_code: str) -> Optional[str]:
+    """Exchange the Apple authorization code for a refresh token (best effort)."""
+    if not _apple_revocation_configured():
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://appleid.apple.com/auth/token",
+                data={
+                    "client_id": APPLE_CLIENT_ID,
+                    "client_secret": _apple_client_secret(),
+                    "code": authorization_code,
+                    "grant_type": "authorization_code",
+                },
+            )
+        if resp.status_code == 200:
+            return resp.json().get("refresh_token")
+        logger.warning("Apple code exchange failed: %s %s", resp.status_code, resp.text[:200])
+    except Exception as e:
+        logger.warning("Apple code exchange error: %s", e)
+    return None
+
+
+async def _apple_revoke_refresh_token(refresh_token: str) -> None:
+    """Revoke the user's Apple refresh token on account deletion (best effort)."""
+    if not _apple_revocation_configured():
+        return
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://appleid.apple.com/auth/revoke",
+                data={
+                    "client_id": APPLE_CLIENT_ID,
+                    "client_secret": _apple_client_secret(),
+                    "token": refresh_token,
+                    "token_type_hint": "refresh_token",
+                },
+            )
+        if resp.status_code == 200:
+            logger.info("Apple token revoked successfully")
+        else:
+            logger.warning("Apple token revoke failed: %s %s", resp.status_code, resp.text[:200])
+    except Exception as e:
+        logger.warning("Apple token revoke error: %s", e)
+
 
 class AppleLoginRequest(BaseModel):
     identity_token: str
     name: Optional[str] = None
     email: Optional[str] = None
+    authorization_code: Optional[str] = None
 
 
 @api_router.post("/auth/apple", response_model=AuthResponse)
@@ -562,6 +642,17 @@ async def apple_login(req: AppleLoginRequest):
         await db.users.insert_one(dict(user_doc))
     else:
         user_doc = await _refresh_tier_if_expired(user_doc)
+
+    # Store an Apple refresh token so we can revoke it on account deletion
+    # (App Store Guideline 5.1.1(v)). Best effort — never blocks login.
+    if req.authorization_code and _apple_revocation_configured():
+        refresh_token = await _apple_exchange_code(req.authorization_code)
+        if refresh_token:
+            await db.users.update_one(
+                {"user_id": user_doc["user_id"]},
+                {"$set": {"apple_refresh_token": refresh_token}},
+            )
+
     token = await _create_session(user_doc["user_id"])
     return AuthResponse(session_token=token, user=_user_to_model(user_doc))
 
@@ -2339,8 +2430,13 @@ async def delete_account(user: User = Depends(get_current_user)):
     """Permanently delete the user's account and all associated data.
 
     Required by Apple App Store review for apps with account creation.
+    Also revokes the Sign in with Apple token (Guideline 5.1.1(v)).
     """
     uid = user.user_id
+    # Revoke Apple token before wiping the user record
+    user_doc = await db.users.find_one({"user_id": uid}, {"apple_refresh_token": 1})
+    if user_doc and user_doc.get("apple_refresh_token"):
+        await _apple_revoke_refresh_token(user_doc["apple_refresh_token"])
     async for a in db.analyses.find(
         {"user_id": uid}, {"analysis_id": 1, "video_path": 1}
     ):

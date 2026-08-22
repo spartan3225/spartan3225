@@ -193,12 +193,14 @@ export async function emailLogin(email: string, password: string) {
 export async function appleLogin(
   identityToken: string,
   name?: string | null,
-  email?: string | null
+  email?: string | null,
+  authorizationCode?: string | null
 ) {
   return authPost("/auth/apple", {
     identity_token: identityToken,
     name: name || undefined,
     email: email || undefined,
+    authorization_code: authorizationCode || undefined,
   });
 }
 
